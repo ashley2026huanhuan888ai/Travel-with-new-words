@@ -2,6 +2,8 @@
 
 The WebApp remains the first product surface, but true Apple OCR requires an iOS native wrapper because Safari/PWA JavaScript cannot directly call Vision.
 
+The first iOS shell is `ios/TravelWithNewWords/TravelWithNewWords.xcodeproj`. It supports iOS 16 and loads bundled WebApp files first.
+
 ## Web to Native Message
 
 The WebApp sends this message to `window.webkit.messageHandlers.appleVisionOcr`:

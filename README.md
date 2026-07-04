@@ -10,6 +10,7 @@ Mobile WebApp prototype for Chinese travelers who use camera translation abroad 
 - OCR provider switcher with Apple Vision bridge, browser OCR, cloud interface, and local fallback.
 - AI explanation adapter prepared for a real model provider.
 - Travel diary review mode.
+- iOS shell project with WKWebView and Apple Vision OCR bridge.
 
 ## Product Direction
 
@@ -28,3 +29,24 @@ http://localhost:4174/index.html?v=6
 ```
 
 If the local server is not running, serve this folder with any static server.
+
+## iOS App
+
+Open the Xcode project:
+
+```text
+ios/TravelWithNewWords/TravelWithNewWords.xcodeproj
+```
+
+Decisions:
+
+- App name: `TravelWithNewWords`
+- Minimum OS: iOS 16
+- WebApp loading: bundled offline files first, remote URL fallback second
+- Native OCR: `WKScriptMessageHandler` named `appleVisionOcr`
+
+The bundled WebApp copy lives in:
+
+```text
+ios/TravelWithNewWords/TravelWithNewWords/WebApp
+```

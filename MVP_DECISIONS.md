@@ -18,3 +18,6 @@ Date: 2026-07-04
 - Privacy priority: addresses, QR codes, chat avatars, and nicknames.
 - Deployment: continue local development for now.
 - GitHub: use ashley2026huanhuan888ai/Travel-with-new-words.git.
+- iOS app name: TravelWithNewWords.
+- iOS minimum version: iOS 16.
+- iOS loading strategy: bundle WebApp files for offline-first loading, with remote URL fallback.
