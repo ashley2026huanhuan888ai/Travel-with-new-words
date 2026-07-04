@@ -1,0 +1,31 @@
+name: iOS Build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  ios:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Check bundled WebApp sync
+        run: npm run check:ios-webapp-sync
+
+      - name: Build iOS shell
+        run: |
+          xcodebuild \
+            -project ios/TravelWithNewWords/TravelWithNewWords.xcodeproj \
+            -scheme TravelWithNewWords \
+            -destination 'generic/platform=iOS Simulator' \
+            CODE_SIGNING_ALLOWED=NO \
+            build

@@ -1,6 +1,6 @@
-import { storage } from "./storage.js?v=6";
-import { createAiExplanationAdapter, getAiProviderLabel } from "./ai.js?v=6";
-import { createOcrAdapter, getOcrProviderLabel, ocrProviderOptions } from "./ocr.js?v=6";
+import { storage } from "./storage.js?v=7";
+import { createAiExplanationAdapter, getAiProviderLabel } from "./ai.js?v=7";
+import { createOcrAdapter, getOcrProviderLabel, ocrProviderOptions } from "./ocr.js?v=7";
 
 const icons = {
   home: "M3 10.5 12 3l9 7.5V21a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z",
@@ -221,7 +221,9 @@ const defaultState = {
     cloudAfterLimit: true,
     cloudUploadEnabled: false,
     ocrProvider: "apple-vision",
-    aiProvider: "real-model-interface",
+    aiProvider: "domestic-model-service",
+    aiNetworkEnabled: false,
+    domesticAiEndpoint: "",
     reviewMode: "travel-diary",
   },
   reviewRevealed: false,
@@ -248,6 +250,8 @@ function getOcrAdapter() {
 function getAiAdapter() {
   return createAiExplanationAdapter({
     provider: state.settings.aiProvider,
+    domesticModelEndpoint: state.settings.domesticAiEndpoint,
+    allowNetwork: state.settings.aiNetworkEnabled === true,
   });
 }
 
@@ -656,7 +660,7 @@ function settingsScreen() {
       </div>
       <div class="panel provider-panel">
         <p class="panel-title">AI 中文解释</p>
-        <p class="subtitle">当前：${aiAdapter.label} · ${aiAdapter.mode}。下一步接真实模型；未配置供应商前不上传内容。</p>
+        <p class="subtitle">当前：${aiAdapter.label} · ${aiAdapter.mode}。通过后端接口接国内模型；未配置接口或未开启联网前不上传内容。</p>
       </div>
       <div class="panel provider-panel">
         <p class="panel-title">云账户订阅版</p>
@@ -674,6 +678,7 @@ function settingsScreen() {
         ${settingRow("location", "按旅行城市记录地点", "开启后默认记录城市，不每次询问")}
         ${settingRow("cloudAfterLimit", "超出本地容量后使用云存储", "云同步、扩容和高级 AI 整理通过订阅实现")}
         ${settingRow("cloudUploadEnabled", "云账户开启后允许上传识别", "关闭时云端 OCR 只走接口占位，不上传来源图片")}
+        ${settingRow("aiNetworkEnabled", "允许联网 AI 深度解释", "未配置我们的国内模型后端前，即使开启也不会上传内容")}
       </div>
 
       <div class="section-head">
@@ -1305,7 +1310,7 @@ function escapeAttr(value) {
 }
 
 if ("serviceWorker" in navigator) {
-  navigator.serviceWorker.register("./service-worker.js?v=6").catch(() => {});
+  navigator.serviceWorker.register("./service-worker.js?v=7").catch(() => {});
 }
 
 render();

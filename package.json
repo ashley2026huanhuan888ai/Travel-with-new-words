@@ -1,0 +1,11 @@
+{
+  "name": "travel-with-new-words",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "sync:ios-webapp": "node scripts/sync-ios-webapp.mjs",
+    "check:web": "node scripts/check-web.mjs",
+    "check:ios-webapp-sync": "node scripts/check-ios-webapp-sync.mjs"
+  }
+}

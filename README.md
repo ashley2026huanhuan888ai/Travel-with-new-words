@@ -8,7 +8,7 @@ Mobile WebApp prototype for Chinese travelers who use camera translation abroad 
 - Local IndexedDB storage for memories, source images, and offline queue.
 - Selective export to CSV, Markdown, and QQ/WeChat travel memory book draft.
 - OCR provider switcher with Apple Vision bridge, browser OCR, cloud interface, and local fallback.
-- AI explanation adapter prepared for a real model provider.
+- AI explanation adapter prepared for a domestic model backend proxy.
 - Travel diary review mode.
 - iOS shell project with WKWebView and Apple Vision OCR bridge.
 
@@ -25,7 +25,7 @@ Mobile WebApp prototype for Chinese travelers who use camera translation abroad 
 Open:
 
 ```text
-http://localhost:4174/index.html?v=6
+http://localhost:4174/index.html?v=7
 ```
 
 If the local server is not running, serve this folder with any static server.
@@ -49,4 +49,10 @@ The bundled WebApp copy lives in:
 
 ```text
 ios/TravelWithNewWords/TravelWithNewWords/WebApp
+```
+
+Sync it after WebApp changes:
+
+```text
+npm run sync:ios-webapp
 ```
