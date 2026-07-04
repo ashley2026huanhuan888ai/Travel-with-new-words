@@ -6,10 +6,14 @@ const jsFiles = ["app.js", "storage.js", "ocr.js", "ai.js", "service-worker.js"]
 const serverFiles = [
   "server/ai-explain-service.mjs",
   "server/static-api-server.mjs",
+  "api/health.js",
+  "api/ai/config.js",
+  "api/ai/explain.js",
+  "api/ai/runtime-key.js",
   "scripts/dev-server.mjs",
   "scripts/check-api.mjs",
 ];
-const appleDoubleRoots = [".github", "docs", "scripts", "server"];
+const appleDoubleRoots = [".github", "api", "docs", "scripts", "server"];
 
 for (const file of [...jsFiles, ...serverFiles]) {
   execFileSync(process.execPath, ["--check", file], { stdio: "inherit" });
@@ -21,7 +25,7 @@ if (!manifest.name || !manifest.start_url) {
 }
 
 const indexHtml = await readFile("index.html", "utf8");
-for (const required of ["app.js?v=9", "styles.css?v=9"]) {
+for (const required of ["app.js?v=10", "styles.css?v=10"]) {
   if (!indexHtml.includes(required)) {
     throw new Error(`index.html does not reference ${required}.`);
   }

@@ -1,6 +1,6 @@
-import { storage } from "./storage.js?v=9";
-import { createAiExplanationAdapter, getAiProviderLabel } from "./ai.js?v=9";
-import { createOcrAdapter, getOcrProviderLabel, ocrProviderOptions } from "./ocr.js?v=9";
+import { storage } from "./storage.js?v=10";
+import { createAiExplanationAdapter, getAiProviderLabel } from "./ai.js?v=10";
+import { createOcrAdapter, getOcrProviderLabel, ocrProviderOptions } from "./ocr.js?v=10";
 
 const icons = {
   home: "M3 10.5 12 3l9 7.5V21a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z",
@@ -232,6 +232,7 @@ const defaultState = {
   sourceImages: [],
   imageUrls: {},
   exportOptions: structuredClone(defaultExportOptions),
+  runtimeAiKey: "",
   apiKeyDialog: {
     open: false,
     apiKey: "",
@@ -258,6 +259,8 @@ function getAiAdapter() {
     provider: state.settings.aiProvider,
     domesticModelEndpoint: state.settings.domesticAiEndpoint,
     allowNetwork: state.settings.aiNetworkEnabled === true,
+    requestDeepSeek: state.settings.aiNetworkEnabled === true,
+    runtimeApiKey: state.runtimeAiKey,
   });
 }
 
@@ -667,7 +670,7 @@ function settingsScreen() {
       </div>
       <div class="panel provider-panel">
         <p class="panel-title">AI 中文解释</p>
-        <p class="subtitle">当前：${aiAdapter.label} · ${aiAdapter.mode}。默认调用本地 mock；配置后端环境变量后可切 DeepSeek。</p>
+        <p class="subtitle">当前：${aiAdapter.label} · ${aiAdapter.mode}。默认本地 mock；填写 Key 后从手机会话调用 DeepSeek。</p>
         <button class="secondary-button wide-button" data-action="open-api-key">填写 DeepSeek API Key</button>
       </div>
       <div class="panel provider-panel">
@@ -710,7 +713,7 @@ function apiKeyDialog() {
       <div class="sheet-head">
         <div>
           <h2>填写 DeepSeek API Key</h2>
-          <p>${state.apiKeyDialog.message || "需要真实 AI 解释时才会用到。Key 只发送到本地同源后端，本次运行内存保存。"}</p>
+          <p>${state.apiKeyDialog.message || "需要真实 AI 解释时才会用到。Key 只保存在本次手机页面会话里。"}</p>
         </div>
         <button class="icon-button" data-action="close-api-key" aria-label="关闭">${icon("back")}</button>
       </div>
@@ -719,7 +722,7 @@ function apiKeyDialog() {
           <span>API Key</span>
           <input data-api-key-input type="password" autocomplete="off" spellcheck="false" value="${escapeAttr(state.apiKeyDialog.apiKey)}" placeholder="sk-..." />
         </label>
-        <p class="subtitle">不会写入 IndexedDB、导出文件或 iOS 包。关闭本地服务器后需要重新填写。</p>
+        <p class="subtitle">不会写入 IndexedDB、导出文件或 iOS 包。刷新页面或重新打开后需要重新填写。</p>
         <div class="sheet-actions">
           <button class="secondary-button" type="button" data-action="close-api-key">取消</button>
           <button class="primary-button" type="submit">保存并继续</button>
@@ -1064,7 +1067,7 @@ async function handleAction(action) {
     return;
   }
   if (action === "open-api-key") {
-    openApiKeyDialog("填写后会切到 DeepSeek 真实解释；Key 只保存在本地服务器本次运行内存。");
+    openApiKeyDialog("填写后会切到 DeepSeek 真实解释；Key 只保存在本次手机页面会话。");
     return;
   }
   if (action === "close-api-key") {
@@ -1295,10 +1298,11 @@ async function saveRuntimeApiKey() {
     const result = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(result.error || "API Key 保存失败");
     const pendingAction = state.apiKeyDialog.pendingAction;
+    state.runtimeAiKey = apiKey;
     state.settings.aiNetworkEnabled = true;
     await storage.saveSettings(state.settings);
     closeApiKeyDialog();
-    toast(`DeepSeek API Key 已保存到本地运行内存，当前模式：${result.aiExplainMode}`);
+    toast(`DeepSeek API Key 已保存在本次页面会话，当前模式：${result.aiExplainMode}`);
     if (pendingAction === "process-queue") {
       await processOfflineQueue();
     }
@@ -1420,7 +1424,7 @@ function escapeAttr(value) {
 }
 
 if ("serviceWorker" in navigator) {
-  navigator.serviceWorker.register("./service-worker.js?v=9").catch(() => {});
+  navigator.serviceWorker.register("./service-worker.js?v=10").catch(() => {});
 }
 
 render();

@@ -58,9 +58,12 @@ async function enrichWithDomesticModel(memory, context, providerConfig, options)
   }
 
   try {
+    const headers = { "content-type": "application/json" };
+    if (options.runtimeApiKey) headers["x-runtime-ai-key"] = options.runtimeApiKey;
+    if (options.requestDeepSeek) headers["x-ai-mode"] = "deepseek";
     const response = await fetch(endpoint, {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers,
       body: JSON.stringify(buildDomesticModelPayload(memory, context)),
     });
     if (!response.ok) {

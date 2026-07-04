@@ -54,7 +54,7 @@ export function startDevServer(options = {}) {
   const host = options.host || process.env.HOST || "127.0.0.1";
   const server = createServer(createRequestListener(options));
   server.listen(port, host, () => {
-    console.log(`Travel with New Words dev server: http://${host}:${port}/index.html?v=9`);
+    console.log(`Travel with New Words dev server: http://${host}:${port}/index.html?v=10`);
     console.log(`AI explain mode: ${process.env.AI_EXPLAIN_MODE || "mock"} / provider: deepseek`);
   });
   return server;
@@ -71,11 +71,18 @@ async function handleAiExplain(request, response, runtimeConfig) {
     throw error;
   }
   const payload = await readJsonBody(request);
+  const runtimeApiKey = getHeader(request, "x-runtime-ai-key");
+  const requestedMode = getHeader(request, "x-ai-mode") === "deepseek" || runtimeApiKey ? "deepseek" : runtimeConfig.mode;
   const result = await createAiExplainResponse(payload, {
-    mode: runtimeConfig.mode,
-    apiKey: runtimeConfig.deepSeekApiKey || process.env.DEEPSEEK_API_KEY,
+    mode: requestedMode,
+    apiKey: runtimeApiKey || runtimeConfig.deepSeekApiKey || process.env.DEEPSEEK_API_KEY,
   });
   respondJson(response, 200, result);
+}
+
+function getHeader(request, name) {
+  const value = request.headers[name] || request.headers[name.toLowerCase()];
+  return Array.isArray(value) ? String(value[0] || "").trim() : String(value || "").trim();
 }
 
 async function handleRuntimeKey(request, response, runtimeConfig) {

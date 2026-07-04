@@ -33,6 +33,8 @@ POST /api/ai/runtime-key
 
 The runtime key is kept only in the local server process memory. It is not written into IndexedDB, exported files, the static WebApp, or the iOS bundle.
 
+For the deployed mobile WebApp, the key is held only in the current browser page session and sent to `/api/ai/explain` as a request header for each AI call. This avoids relying on serverless process memory.
+
 Optional environment variables:
 
 ```text

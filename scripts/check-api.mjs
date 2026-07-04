@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import explainHandler from "../api/ai/explain.js";
+import runtimeKeyHandler from "../api/ai/runtime-key.js";
 import { buildDeepSeekChatRequest, createAiExplainResponse } from "../server/ai-explain-service.mjs";
 
 const sample = {
@@ -42,4 +44,43 @@ await assert.rejects(
   (error) => error.code === "api-key-required" && error.statusCode === 401
 );
 
-console.log("API checks passed (mock response + DeepSeek request shape + API key required path).");
+const runtimeKeyResponse = await callHandler(runtimeKeyHandler, {
+  method: "POST",
+  body: { apiKey: "sk-test-local-runtime-key-1234567890" },
+});
+assert.equal(runtimeKeyResponse.statusCode, 200);
+assert.equal(runtimeKeyResponse.body.keySource, "browser-session");
+
+const explainWithoutKey = await callHandler(explainHandler, {
+  method: "POST",
+  headers: { "x-ai-mode": "deepseek" },
+  body: sample,
+});
+assert.equal(explainWithoutKey.statusCode, 401);
+assert.equal(explainWithoutKey.body.code, "api-key-required");
+
+console.log("API checks passed (mock, DeepSeek request shape, key prompt path, Vercel handlers).");
+
+async function callHandler(handler, request) {
+  const response = {
+    statusCode: 200,
+    body: null,
+    status(code) {
+      this.statusCode = code;
+      return this;
+    },
+    json(payload) {
+      this.body = payload;
+      return this;
+    },
+  };
+  await handler(
+    {
+      method: request.method || "GET",
+      headers: request.headers || {},
+      body: request.body,
+    },
+    response
+  );
+  return response;
+}
