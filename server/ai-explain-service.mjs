@@ -57,7 +57,8 @@ export async function explainWithDeepSeek(payload, options = {}) {
   const apiKey = options.apiKey || process.env.DEEPSEEK_API_KEY;
   if (!apiKey) {
     const error = new Error("DEEPSEEK_API_KEY is required when AI_EXPLAIN_MODE=deepseek.");
-    error.statusCode = 500;
+    error.statusCode = 401;
+    error.code = "api-key-required";
     throw error;
   }
 

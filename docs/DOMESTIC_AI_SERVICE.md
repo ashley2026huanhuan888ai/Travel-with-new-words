@@ -16,6 +16,23 @@ DeepSeek mode:
 AI_EXPLAIN_MODE=deepseek DEEPSEEK_API_KEY=your_key npm run dev
 ```
 
+If DeepSeek mode is active but no key is configured, `/api/ai/explain` returns:
+
+```json
+{
+  "code": "api-key-required",
+  "error": "DEEPSEEK_API_KEY is required when AI_EXPLAIN_MODE=deepseek."
+}
+```
+
+The WebApp catches this and opens the DeepSeek API Key dialog. Submitting the dialog calls:
+
+```text
+POST /api/ai/runtime-key
+```
+
+The runtime key is kept only in the local server process memory. It is not written into IndexedDB, exported files, the static WebApp, or the iOS bundle.
+
 Optional environment variables:
 
 ```text

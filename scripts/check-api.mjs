@@ -37,5 +37,9 @@ assert.ok(JSON.stringify(deepSeekRequest.messages).includes("literal"));
 assert.ok(JSON.stringify(deepSeekRequest.messages).includes("mistake"));
 
 await assert.rejects(() => createAiExplainResponse({}, { mode: "mock" }), /memory/iu);
+await assert.rejects(
+  () => createAiExplainResponse(sample, { mode: "deepseek", apiKey: "" }),
+  (error) => error.code === "api-key-required" && error.statusCode === 401
+);
 
-console.log("API checks passed (mock response + DeepSeek request shape).");
+console.log("API checks passed (mock response + DeepSeek request shape + API key required path).");

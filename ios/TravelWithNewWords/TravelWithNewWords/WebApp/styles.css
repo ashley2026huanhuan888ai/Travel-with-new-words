@@ -1231,7 +1231,8 @@ button {
   background: rgba(15, 24, 19, 0.32);
 }
 
-.export-sheet {
+.export-sheet,
+.api-key-modal {
   position: absolute;
   left: 0;
   right: 0;
@@ -1243,6 +1244,43 @@ button {
   border-radius: 22px 22px 0 0;
   background: white;
   box-shadow: 0 -18px 42px rgba(12, 24, 18, 0.18);
+}
+
+.api-key-modal {
+  max-height: 70%;
+}
+
+.api-key-form {
+  display: grid;
+  gap: 14px;
+  margin-top: 18px;
+}
+
+.api-key-field {
+  display: grid;
+  gap: 8px;
+}
+
+.api-key-field span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.api-key-field input {
+  width: 100%;
+  min-height: 44px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: #fbfcfb;
+  color: #20342a;
+  font-size: 14px;
+}
+
+.wide-button {
+  width: 100%;
+  margin-top: 12px;
 }
 
 .sheet-grip {

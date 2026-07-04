@@ -9,27 +9,40 @@ const maxJsonBytes = 1_000_000;
 
 export function createRequestListener(options = {}) {
   const root = path.resolve(options.root || projectRoot);
+  const runtimeConfig = {
+    mode: options.mode || process.env.AI_EXPLAIN_MODE || "mock",
+    deepSeekApiKey: options.deepSeekApiKey || "",
+  };
   return async function requestListener(request, response) {
     const url = new URL(request.url || "/", `http://${request.headers.host || "localhost"}`);
     try {
       if (url.pathname === "/api/health") {
         respondJson(response, 200, {
           ok: true,
-          aiExplainMode: process.env.AI_EXPLAIN_MODE || "mock",
-          provider: "deepseek",
-          model: process.env.DEEPSEEK_MODEL || "deepseek-v4-flash",
+          ...getAiConfig(runtimeConfig),
         });
         return;
       }
 
+      if (url.pathname === "/api/ai/config") {
+        respondJson(response, 200, getAiConfig(runtimeConfig));
+        return;
+      }
+
+      if (url.pathname === "/api/ai/runtime-key") {
+        await handleRuntimeKey(request, response, runtimeConfig);
+        return;
+      }
+
       if (url.pathname === "/api/ai/explain") {
-        await handleAiExplain(request, response);
+        await handleAiExplain(request, response, runtimeConfig);
         return;
       }
 
       await serveStaticFile(request, response, root, url.pathname);
     } catch (error) {
       respondJson(response, error.statusCode || 500, {
+        code: error.code || "server-error",
         error: error.message || "Internal server error.",
       });
     }
@@ -41,13 +54,13 @@ export function startDevServer(options = {}) {
   const host = options.host || process.env.HOST || "127.0.0.1";
   const server = createServer(createRequestListener(options));
   server.listen(port, host, () => {
-    console.log(`Travel with New Words dev server: http://${host}:${port}/index.html?v=8`);
+    console.log(`Travel with New Words dev server: http://${host}:${port}/index.html?v=9`);
     console.log(`AI explain mode: ${process.env.AI_EXPLAIN_MODE || "mock"} / provider: deepseek`);
   });
   return server;
 }
 
-async function handleAiExplain(request, response) {
+async function handleAiExplain(request, response, runtimeConfig) {
   if (request.method === "OPTIONS") {
     respondJson(response, 204, {});
     return;
@@ -58,8 +71,49 @@ async function handleAiExplain(request, response) {
     throw error;
   }
   const payload = await readJsonBody(request);
-  const result = await createAiExplainResponse(payload);
+  const result = await createAiExplainResponse(payload, {
+    mode: runtimeConfig.mode,
+    apiKey: runtimeConfig.deepSeekApiKey || process.env.DEEPSEEK_API_KEY,
+  });
   respondJson(response, 200, result);
+}
+
+async function handleRuntimeKey(request, response, runtimeConfig) {
+  if (request.method === "OPTIONS") {
+    respondJson(response, 204, {});
+    return;
+  }
+  if (request.method !== "POST") {
+    const error = new Error("POST required.");
+    error.statusCode = 405;
+    throw error;
+  }
+  const body = await readJsonBody(request);
+  const apiKey = String(body.apiKey || "").trim();
+  if (apiKey.length < 16) {
+    const error = new Error("DeepSeek API Key is too short.");
+    error.statusCode = 400;
+    error.code = "invalid-api-key";
+    throw error;
+  }
+  runtimeConfig.deepSeekApiKey = apiKey;
+  runtimeConfig.mode = "deepseek";
+  respondJson(response, 200, getAiConfig(runtimeConfig));
+}
+
+function getAiConfig(runtimeConfig) {
+  const envKeyConfigured = Boolean(process.env.DEEPSEEK_API_KEY);
+  const runtimeKeyConfigured = Boolean(runtimeConfig.deepSeekApiKey);
+  const keyConfigured = envKeyConfigured || runtimeKeyConfigured;
+  return {
+    aiExplainMode: runtimeConfig.mode,
+    provider: "deepseek",
+    model: process.env.DEEPSEEK_MODEL || "deepseek-v4-flash",
+    keyConfigured,
+    keySource: envKeyConfigured ? "env" : runtimeKeyConfigured ? "runtime-memory" : "none",
+    requiresApiKey: runtimeConfig.mode === "deepseek" && !keyConfigured,
+    acceptsRuntimeKey: true,
+  };
 }
 
 async function serveStaticFile(request, response, root, pathname) {
@@ -121,9 +175,6 @@ async function readJsonBody(request) {
 
 function respondJson(response, status, payload) {
   response.writeHead(status, {
-    "access-control-allow-origin": "*",
-    "access-control-allow-methods": "GET,POST,OPTIONS",
-    "access-control-allow-headers": "content-type, authorization",
     "content-type": "application/json; charset=utf-8",
     "cache-control": "no-store",
   });

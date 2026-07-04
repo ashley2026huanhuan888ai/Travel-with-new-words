@@ -1,6 +1,6 @@
-import { storage } from "./storage.js?v=8";
-import { createAiExplanationAdapter, getAiProviderLabel } from "./ai.js?v=8";
-import { createOcrAdapter, getOcrProviderLabel, ocrProviderOptions } from "./ocr.js?v=8";
+import { storage } from "./storage.js?v=9";
+import { createAiExplanationAdapter, getAiProviderLabel } from "./ai.js?v=9";
+import { createOcrAdapter, getOcrProviderLabel, ocrProviderOptions } from "./ocr.js?v=9";
 
 const icons = {
   home: "M3 10.5 12 3l9 7.5V21a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z",
@@ -232,6 +232,12 @@ const defaultState = {
   sourceImages: [],
   imageUrls: {},
   exportOptions: structuredClone(defaultExportOptions),
+  apiKeyDialog: {
+    open: false,
+    apiKey: "",
+    message: "",
+    pendingAction: "",
+  },
 };
 
 let state = structuredClone(defaultState);
@@ -341,6 +347,7 @@ function render() {
       ${screen}
       ${nav()}
       ${state.exportOptions.open ? exportSheet() : ""}
+      ${state.apiKeyDialog.open ? apiKeyDialog() : ""}
       ${state.toast ? `<div class="toast">${state.toast}</div>` : ""}
     </section>
   `;
@@ -661,6 +668,7 @@ function settingsScreen() {
       <div class="panel provider-panel">
         <p class="panel-title">AI 中文解释</p>
         <p class="subtitle">当前：${aiAdapter.label} · ${aiAdapter.mode}。默认调用本地 mock；配置后端环境变量后可切 DeepSeek。</p>
+        <button class="secondary-button wide-button" data-action="open-api-key">填写 DeepSeek API Key</button>
       </div>
       <div class="panel provider-panel">
         <p class="panel-title">云账户订阅版</p>
@@ -691,6 +699,33 @@ function settingsScreen() {
         <button class="setting-row" data-action="memory-book"><span><strong>生成 QQ/微信旅行语言回忆册</strong><span>按城市、日期和场景生成分享内容</span></span>${icon("book")}</button>
       </div>
     </div>
+  `;
+}
+
+function apiKeyDialog() {
+  return `
+    <div class="sheet-backdrop" data-action="close-api-key" aria-hidden="true"></div>
+    <section class="api-key-modal" role="dialog" aria-modal="true" aria-label="填写 DeepSeek API Key">
+      <div class="sheet-grip" aria-hidden="true"></div>
+      <div class="sheet-head">
+        <div>
+          <h2>填写 DeepSeek API Key</h2>
+          <p>${state.apiKeyDialog.message || "需要真实 AI 解释时才会用到。Key 只发送到本地同源后端，本次运行内存保存。"}</p>
+        </div>
+        <button class="icon-button" data-action="close-api-key" aria-label="关闭">${icon("back")}</button>
+      </div>
+      <form class="api-key-form" data-api-key-form>
+        <label class="api-key-field">
+          <span>API Key</span>
+          <input data-api-key-input type="password" autocomplete="off" spellcheck="false" value="${escapeAttr(state.apiKeyDialog.apiKey)}" placeholder="sk-..." />
+        </label>
+        <p class="subtitle">不会写入 IndexedDB、导出文件或 iOS 包。关闭本地服务器后需要重新填写。</p>
+        <div class="sheet-actions">
+          <button class="secondary-button" type="button" data-action="close-api-key">取消</button>
+          <button class="primary-button" type="submit">保存并继续</button>
+        </div>
+      </form>
+    </section>
   `;
 }
 
@@ -936,6 +971,15 @@ function bindEvents(root) {
     render();
   });
 
+  root.querySelector("[data-api-key-input]")?.addEventListener("input", (event) => {
+    state.apiKeyDialog.apiKey = event.target.value;
+  });
+
+  root.querySelector("[data-api-key-form]")?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    await saveRuntimeApiKey();
+  });
+
   root.querySelectorAll("[data-toggle]").forEach((button) => {
     button.addEventListener("click", async () => {
       const key = button.dataset.toggle;
@@ -1017,6 +1061,14 @@ async function handleAction(action) {
   if (action === "close-export") {
     state.exportOptions.open = false;
     render();
+    return;
+  }
+  if (action === "open-api-key") {
+    openApiKeyDialog("填写后会切到 DeepSeek 真实解释；Key 只保存在本地服务器本次运行内存。");
+    return;
+  }
+  if (action === "close-api-key") {
+    closeApiKeyDialog();
     return;
   }
   if (action === "run-export") {
@@ -1156,8 +1208,9 @@ async function processOfflineQueue() {
     toast("离线队列已清空，没有待处理任务");
     return;
   }
-  await Promise.all(
-    pendingTasks.map(async (task) => {
+  let blockedByApiKey = false;
+  let processedCount = 0;
+  for (const task of pendingTasks) {
       if (task.type === "ocr-source-image") {
         const sourceImage = state.sourceImages.find((item) => item.id === task.sourceImageId) || (await storage.getSourceImage(task.sourceImageId));
         if (sourceImage) {
@@ -1180,6 +1233,12 @@ async function processOfflineQueue() {
             sourceImage,
             ocr: sourceImage?.ocr,
           });
+          if (enrichment.status === "api-key-required") {
+            blockedByApiKey = true;
+            await storage.updateTask({ ...task, status: "pending", lastError: enrichment.error || "DeepSeek API Key required." });
+            openApiKeyDialog("需要 DeepSeek API Key 才能继续真实 AI 深度解释。保存后会继续处理离线队列。", "process-queue");
+            break;
+          }
           memory.pending = false;
           memory.enrichedAt = enrichment.enrichedAt;
           memory.aiProvider = enrichment.provider;
@@ -1191,10 +1250,61 @@ async function processOfflineQueue() {
         }
       }
       await storage.updateTask({ ...task, status: "done", completedAt: new Date().toISOString() });
-    })
-  );
+      processedCount += 1;
+  }
   state.queue = sortQueue(await storage.clearCompletedQueue());
-  toast(`已处理 ${pendingTasks.length} 项：OCR 识别和 AI 整理状态已更新`);
+  if (blockedByApiKey) {
+    toast(processedCount ? `已处理 ${processedCount} 项，剩余 AI 整理需要填写 DeepSeek API Key` : "需要填写 DeepSeek API Key 才能继续 AI 整理");
+    return;
+  }
+  toast(`已处理 ${processedCount} 项：OCR 识别和 AI 整理状态已更新`);
+}
+
+function openApiKeyDialog(message = "", pendingAction = "") {
+  state.apiKeyDialog = {
+    open: true,
+    apiKey: "",
+    message,
+    pendingAction,
+  };
+  render();
+}
+
+function closeApiKeyDialog() {
+  state.apiKeyDialog = {
+    open: false,
+    apiKey: "",
+    message: "",
+    pendingAction: "",
+  };
+  render();
+}
+
+async function saveRuntimeApiKey() {
+  const apiKey = state.apiKeyDialog.apiKey.trim();
+  if (!apiKey) {
+    toast("请先填写 DeepSeek API Key");
+    return;
+  }
+  try {
+    const response = await fetch("/api/ai/runtime-key", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ apiKey }),
+    });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(result.error || "API Key 保存失败");
+    const pendingAction = state.apiKeyDialog.pendingAction;
+    state.settings.aiNetworkEnabled = true;
+    await storage.saveSettings(state.settings);
+    closeApiKeyDialog();
+    toast(`DeepSeek API Key 已保存到本地运行内存，当前模式：${result.aiExplainMode}`);
+    if (pendingAction === "process-queue") {
+      await processOfflineQueue();
+    }
+  } catch (error) {
+    toast(error instanceof Error ? error.message : "API Key 保存失败");
+  }
 }
 
 function toast(message) {
@@ -1310,7 +1420,7 @@ function escapeAttr(value) {
 }
 
 if ("serviceWorker" in navigator) {
-  navigator.serviceWorker.register("./service-worker.js?v=8").catch(() => {});
+  navigator.serviceWorker.register("./service-worker.js?v=9").catch(() => {});
 }
 
 render();

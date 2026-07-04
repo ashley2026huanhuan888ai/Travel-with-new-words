@@ -21,7 +21,7 @@ if (!manifest.name || !manifest.start_url) {
 }
 
 const indexHtml = await readFile("index.html", "utf8");
-for (const required of ["app.js?v=8", "styles.css?v=8"]) {
+for (const required of ["app.js?v=9", "styles.css?v=9"]) {
   if (!indexHtml.includes(required)) {
     throw new Error(`index.html does not reference ${required}.`);
   }

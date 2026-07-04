@@ -31,7 +31,7 @@ npm run dev
 Then open:
 
 ```text
-http://localhost:4174/index.html?v=8
+http://localhost:4174/index.html?v=9
 ```
 
 By default the AI endpoint uses a local mock and does not call any external model.
@@ -42,7 +42,7 @@ To call DeepSeek from the backend:
 AI_EXPLAIN_MODE=deepseek DEEPSEEK_API_KEY=your_key npm run dev
 ```
 
-The frontend and iOS bundle never store the model provider key.
+If DeepSeek mode needs a key, the WebApp opens a key dialog. The key is sent only to the local same-origin backend and kept in server memory for this run. The frontend, IndexedDB, export files, and iOS bundle never store the model provider key.
 
 ## iOS App
 

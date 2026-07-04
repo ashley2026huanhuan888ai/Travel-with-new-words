@@ -64,13 +64,19 @@ async function enrichWithDomesticModel(memory, context, providerConfig, options)
       body: JSON.stringify(buildDomesticModelPayload(memory, context)),
     });
     if (!response.ok) {
-      throw new Error(`Domestic model endpoint returned ${response.status}`);
+      const errorBody = await response.json().catch(() => ({}));
+      const error = new Error(errorBody.error || `Domestic model endpoint returned ${response.status}`);
+      error.statusCode = response.status;
+      error.code = errorBody.code || "";
+      throw error;
     }
     const data = await response.json();
     return normalizeModelResponse(data, memory, context, providerConfig);
   } catch (error) {
+    const status = error.code === "api-key-required" || error.statusCode === 401 ? "api-key-required" : "provider-error";
     return {
-      ...buildFallbackEnrichment(memory, context, providerConfig, "provider-error", true),
+      ...buildFallbackEnrichment(memory, context, providerConfig, status, true),
+      errorCode: error.code || "",
       error: error instanceof Error ? error.message : "Domestic model request failed.",
     };
   }
