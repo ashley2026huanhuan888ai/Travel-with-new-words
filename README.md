@@ -8,7 +8,7 @@ Mobile WebApp prototype for Chinese travelers who use camera translation abroad 
 - Local IndexedDB storage for memories, source images, and offline queue.
 - Selective export to CSV, Markdown, and QQ/WeChat travel memory book draft.
 - OCR provider switcher with Apple Vision bridge, browser OCR, cloud interface, and local fallback.
-- AI explanation adapter prepared for a domestic model backend proxy.
+- AI explanation adapter prepared for a local `/api/ai/explain` backend and DeepSeek provider mode.
 - Travel diary review mode.
 - iOS shell project with WKWebView and Apple Vision OCR bridge.
 
@@ -22,13 +22,27 @@ Mobile WebApp prototype for Chinese travelers who use camera translation abroad 
 
 ## Local Preview
 
-Open:
+Start the local WebApp + API server:
 
 ```text
-http://localhost:4174/index.html?v=7
+npm run dev
 ```
 
-If the local server is not running, serve this folder with any static server.
+Then open:
+
+```text
+http://localhost:4174/index.html?v=8
+```
+
+By default the AI endpoint uses a local mock and does not call any external model.
+
+To call DeepSeek from the backend:
+
+```text
+AI_EXPLAIN_MODE=deepseek DEEPSEEK_API_KEY=your_key npm run dev
+```
+
+The frontend and iOS bundle never store the model provider key.
 
 ## iOS App
 
@@ -55,4 +69,10 @@ Sync it after WebApp changes:
 
 ```text
 npm run sync:ios-webapp
+```
+
+## Checks
+
+```text
+npm run check
 ```

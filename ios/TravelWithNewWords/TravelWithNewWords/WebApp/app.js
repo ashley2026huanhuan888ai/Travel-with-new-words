@@ -1,6 +1,6 @@
-import { storage } from "./storage.js?v=7";
-import { createAiExplanationAdapter, getAiProviderLabel } from "./ai.js?v=7";
-import { createOcrAdapter, getOcrProviderLabel, ocrProviderOptions } from "./ocr.js?v=7";
+import { storage } from "./storage.js?v=8";
+import { createAiExplanationAdapter, getAiProviderLabel } from "./ai.js?v=8";
+import { createOcrAdapter, getOcrProviderLabel, ocrProviderOptions } from "./ocr.js?v=8";
 
 const icons = {
   home: "M3 10.5 12 3l9 7.5V21a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z",
@@ -223,7 +223,7 @@ const defaultState = {
     ocrProvider: "apple-vision",
     aiProvider: "domestic-model-service",
     aiNetworkEnabled: false,
-    domesticAiEndpoint: "",
+    domesticAiEndpoint: "/api/ai/explain",
     reviewMode: "travel-diary",
   },
   reviewRevealed: false,
@@ -660,7 +660,7 @@ function settingsScreen() {
       </div>
       <div class="panel provider-panel">
         <p class="panel-title">AI 中文解释</p>
-        <p class="subtitle">当前：${aiAdapter.label} · ${aiAdapter.mode}。通过后端接口接国内模型；未配置接口或未开启联网前不上传内容。</p>
+        <p class="subtitle">当前：${aiAdapter.label} · ${aiAdapter.mode}。默认调用本地 mock；配置后端环境变量后可切 DeepSeek。</p>
       </div>
       <div class="panel provider-panel">
         <p class="panel-title">云账户订阅版</p>
@@ -678,7 +678,7 @@ function settingsScreen() {
         ${settingRow("location", "按旅行城市记录地点", "开启后默认记录城市，不每次询问")}
         ${settingRow("cloudAfterLimit", "超出本地容量后使用云存储", "云同步、扩容和高级 AI 整理通过订阅实现")}
         ${settingRow("cloudUploadEnabled", "云账户开启后允许上传识别", "关闭时云端 OCR 只走接口占位，不上传来源图片")}
-        ${settingRow("aiNetworkEnabled", "允许联网 AI 深度解释", "未配置我们的国内模型后端前，即使开启也不会上传内容")}
+        ${settingRow("aiNetworkEnabled", "允许联网 AI 深度解释", "开启后调用同源 /api/ai/explain；本地 mock 不出网，DeepSeek Key 只放后端")}
       </div>
 
       <div class="section-head">
@@ -1310,7 +1310,7 @@ function escapeAttr(value) {
 }
 
 if ("serviceWorker" in navigator) {
-  navigator.serviceWorker.register("./service-worker.js?v=7").catch(() => {});
+  navigator.serviceWorker.register("./service-worker.js?v=8").catch(() => {});
 }
 
 render();

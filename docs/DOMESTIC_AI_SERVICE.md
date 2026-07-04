@@ -2,6 +2,29 @@
 
 The app should not call a domestic model provider directly from the phone or browser. The mobile client calls our backend endpoint, and the backend owns provider keys, routing, rate limits, and audit logs.
 
+First provider: DeepSeek.
+
+Local default: mock mode. This lets the product loop work without an API key:
+
+```text
+npm run dev
+```
+
+DeepSeek mode:
+
+```text
+AI_EXPLAIN_MODE=deepseek DEEPSEEK_API_KEY=your_key npm run dev
+```
+
+Optional environment variables:
+
+```text
+DEEPSEEK_BASE_URL=https://api.deepseek.com
+DEEPSEEK_MODEL=deepseek-v4-flash
+DEEPSEEK_TEMPERATURE=1
+DEEPSEEK_MAX_TOKENS=1200
+```
+
 ## Client Endpoint
 
 Default client endpoint:
@@ -60,6 +83,33 @@ Response shape:
 
 ## Backend Provider Notes
 
-First provider class: domestic model service.
+The backend maps the stable `/api/ai/explain` contract to DeepSeek internally. Keep provider keys in backend environment variables, never in the WebApp or iOS bundle.
 
-The backend should expose a stable `/api/ai/explain` contract and map it to the selected domestic model provider internally. Keep provider keys in backend environment variables, never in the WebApp or iOS bundle.
+DeepSeek request shape used by the backend:
+
+```json
+{
+  "model": "deepseek-v4-flash",
+  "messages": [
+    { "role": "system", "content": "..." },
+    { "role": "user", "content": "..." }
+  ],
+  "response_format": { "type": "json_object" },
+  "temperature": 1,
+  "max_tokens": 1200,
+  "stream": false
+}
+```
+
+The model prompt explicitly asks for JSON with:
+
+```text
+usage
+sections.literal
+sections.natural
+sections.scene
+sections.tone
+sections.example
+sections.similar
+sections.mistake
+```
