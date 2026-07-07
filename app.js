@@ -1,6 +1,6 @@
-import { storage } from "./storage.js?v=10";
-import { createAiExplanationAdapter, getAiProviderLabel } from "./ai.js?v=10";
-import { createOcrAdapter, getOcrProviderLabel, ocrProviderOptions } from "./ocr.js?v=10";
+import { storage } from "./storage.js?v=13";
+import { createAiExplanationAdapter, getAiProviderLabel } from "./ai.js?v=13";
+import { createOcrAdapter, getOcrProviderLabel, ocrProviderOptions } from "./ocr.js?v=13";
 
 const icons = {
   home: "M3 10.5 12 3l9 7.5V21a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z",
@@ -161,6 +161,26 @@ const captureSuggestions = [
   },
 ];
 
+const manualTranslationHints = [
+  ["no smoking", "禁止吸烟", "不允许吸烟"],
+  ["cash only", "只收现金", "只能使用现金付款"],
+  ["card only", "只支持刷卡", "只能使用银行卡或电子支付"],
+  ["tax free", "免税", "购物时可申请免税"],
+  ["take away", "外带", "带走，不在店内食用"],
+  ["dine in", "堂食", "在店内食用"],
+  ["mind the gap", "小心站台间隙", "提醒乘客注意站台和车厢之间的空隙"],
+  ["keep out", "禁止进入", "不要进入该区域"],
+  ["entrance", "入口", "进入的地方"],
+  ["exit", "出口", "离开的地方"],
+  ["reservation", "预约", "提前保留位置或服务"],
+  ["boarding gate", "登机口", "登机时前往的门"],
+  ["check-in", "办理入住/值机", "酒店入住或航班值机"],
+  ["how to use", "使用方法", "说明如何使用"],
+  ["特製味噌ラーメン", "特制味噌拉面", "特别制作的味噌拉面"],
+  ["辛味噌ラーメン", "辣味噌拉面", "带辣味的味噌拉面"],
+  ["餃子", "饺子", "日式煎饺或饺子"],
+];
+
 const exportFields = [
   ["original", "原文"],
   ["translation", "中文译文"],
@@ -211,6 +231,10 @@ const defaultState = {
   filter: "全部",
   lastImportName: "",
   lastSourceImageId: "",
+  manualInput: {
+    text: "",
+    previewReady: false,
+  },
   toast: "",
   storageReady: false,
   settings: {
@@ -320,7 +344,10 @@ function nav() {
     <nav class="bottom-nav" aria-label="主导航">
       ${tabs
         .map(([id, label, iconName, special]) => {
-          const active = state.activeTab === id || (id === "library" && state.activeTab === "detail");
+          const active =
+            state.activeTab === id ||
+            (id === "library" && state.activeTab === "detail") ||
+            (id === "capture" && state.activeTab === "manual");
           return `
             <button class="nav-item ${active ? "active" : ""} ${special || ""}" data-tab="${id}">
               <span class="tab-icon-wrap">${icon(iconName, "tab-icon")}</span>
@@ -338,6 +365,7 @@ function render() {
   const screen = {
     home: homeScreen,
     capture: captureScreen,
+    manual: manualScreen,
     library: libraryScreen,
     detail: detailScreen,
     review: reviewScreen,
@@ -370,6 +398,11 @@ function homeScreen() {
       <button class="hero-action" data-tab="capture">
         <span class="camera-mark">${icon("camera")}</span>
         <span><strong>拍照翻译</strong><span>识别菜单 / 路牌 / 说明书等</span></span>
+      </button>
+
+      <button class="manual-entry-card" data-tab="manual">
+        <span class="manual-mark">${icon("edit")}</span>
+        <span><strong>输入文字翻译</strong><span>单词、短语、句子、段落都保存到同一个记忆库</span></span>
       </button>
 
       <div class="grid-two">
@@ -436,7 +469,7 @@ function captureScreen() {
     ${topbar(
       `<button class="icon-button" data-tab="home" aria-label="关闭">${icon("back")}</button> 日文 → 中文`,
       "",
-      `<button class="icon-button" aria-label="闪光灯">${icon("flash")}</button><label class="icon-button" for="photoInput" aria-label="导入图片">${icon("image")}</label>`,
+      `<button class="icon-button" data-tab="manual" aria-label="输入文字">${icon("edit")}</button><label class="icon-button" for="photoInput" aria-label="导入图片">${icon("image")}</label>`,
       ""
     )}
     <input id="photoInput" class="file-input" type="file" accept="image/*" capture="environment" />
@@ -476,8 +509,80 @@ function captureScreen() {
   `;
 }
 
+function manualScreen() {
+  const text = state.manualInput.text || "";
+  const normalizedText = normalizeManualText(text);
+  const blocks = splitManualText(normalizedText);
+  const previewReady = state.manualInput.previewReady && normalizedText;
+  const preview = previewReady ? buildManualMemoryDraft(normalizedText, blocks) : null;
+  const language = normalizedText ? inferManualLanguage(normalizedText) : "自动识别";
+  const scene = normalizedText ? inferManualScene(normalizedText) : "旅行场景";
+  const levelSummary = summarizeManualLevels(blocks);
+  const samples = ["No smoking in this area.", "辛味噌ラーメンをください。", "Cash only"];
+
+  return `
+    ${topbar(
+      `<button class="icon-button" data-tab="home" aria-label="返回">${icon("back")}</button> 输入文字翻译`,
+      "保存到记忆库，自动生成复习卡片",
+      `<button class="icon-button" data-tab="capture" aria-label="拍照翻译">${icon("camera")}</button>`
+    )}
+    <div class="content">
+      <form class="manual-form" data-manual-form>
+        <label class="manual-text-field">
+          <span>要翻译的文字</span>
+          <textarea data-manual-text rows="7" spellcheck="false" placeholder="输入单词、短语、句子或一整段外语">${escapeHtml(text)}</textarea>
+        </label>
+
+        <div class="manual-sample-row">
+          ${samples.map((sample) => `<button type="button" data-manual-sample="${escapeAttr(sample)}">${escapeHtml(sample)}</button>`).join("")}
+        </div>
+
+        <div class="manual-meta-grid">
+          <span><strong>${language}</strong><small>语言</small></span>
+          <span><strong>${scene}</strong><small>场景</small></span>
+          <span><strong>${blocks.length || 0}</strong><small>层级</small></span>
+        </div>
+
+        <div class="source-policy manual-policy">
+          <strong>${previewReady ? "保存前预览已生成" : normalizedText ? "先生成保存前预览" : "输入后先预览再入库"}</strong>
+          <span>${normalizedText ? `${levelSummary}。确认后会保存为同一条主记忆，DeepSeek 整理等你点“补整理”时再处理。` : "支持单词、短语、句子和段落。第一步只预览，不写入记忆库。"}</span>
+        </div>
+
+        ${
+          preview
+            ? `
+          <div class="translation-result manual-result">
+            <small>${escapeHtml(preview.level)} · ${escapeHtml(preview.language)}</small>
+            <h2>${escapeHtml(preview.translation)}</h2>
+            <p>${escapeHtml(preview.usage)}</p>
+            <div class="chip-row">${preview.similar.map((item) => `<span class="chip">${escapeHtml(item)}</span>`).join("")}</div>
+          </div>
+        `
+            : ""
+        }
+
+        <div class="capture-actions">
+          <button class="secondary-button" type="button" data-action="${previewReady ? "edit-manual" : "clear-manual"}">${previewReady ? "返回修改" : "清空"}</button>
+          <button class="primary-button" type="submit">${previewReady ? "确认保存" : "生成预览"}</button>
+        </div>
+      </form>
+
+      ${
+        previewReady && blocks.length
+          ? `
+        <div class="detail-block">
+          <h3>自动拆分</h3>
+          <div class="level-list">${blocks.map((block) => manualBlockItem(block)).join("")}</div>
+        </div>
+      `
+          : ""
+      }
+    </div>
+  `;
+}
+
 function libraryScreen() {
-  const filters = ["全部", "餐饮", "交通", "购物", "待复习", "已掌握"];
+  const filters = ["全部", "餐饮", "交通", "购物", "手动输入", "待复习", "已掌握"];
   const memories = filteredMemories();
   return `
     ${topbar("记忆库", "按语言、地点、场景和来源检索", `<button class="icon-button" data-action="export">${icon("export")}</button>`)}
@@ -544,22 +649,23 @@ function detailScreen() {
         <div class="mini-panel"><span>语气/风格</span><strong>${memory.tone}</strong></div>
         <div class="mini-panel"><span>难度</span><strong>${memory.difficulty}</strong></div>
       </div>
+      ${memory.contentBlocks?.length ? contentLevelBlock(memory) : ""}
       <div class="detail-block">
         <h3>例句</h3>
         <p>${memory.example}</p>
       </div>
       <div class="detail-block">
         <h3>相似表达</h3>
-        <div class="chip-row">${memory.similar.map((item) => `<span class="chip">${item}</span>`).join("")}</div>
+        <div class="chip-row">${(memory.similar || []).map((item) => `<span class="chip">${item}</span>`).join("")}</div>
       </div>
       <div class="detail-block">
         <h3>易错点</h3>
         <p>${memory.mistake}</p>
       </div>
       <div class="detail-block">
-        <h3>来源截图</h3>
+        <h3>${memory.sourceKind === "manual-text" ? "文本来源" : "来源截图"}</h3>
         <div class="source-row">
-          <p>${memory.source} · 原图默认隐藏，只展示文字区域。已出现 ${memory.occurrences} 次。${sourceOcrSummary(memory)}</p>
+          <p>${sourceDescription(memory)}</p>
           ${sourcePreview(memory)}
         </div>
       </div>
@@ -597,7 +703,7 @@ function reviewScreen() {
         <span class="${thumbClass(memory.thumb)}" aria-hidden="true"></span>
         <span class="review-kicker">${memory.location} · ${memory.scene}</span>
         <h2>${memory.story}</h2>
-        <p>回想当时照片里的外语表达、中文意思和使用场景。</p>
+        <p>回想当时来源里的外语表达、中文意思和使用场景。</p>
         <div class="detail-block ${answerVisible ? "" : "answer-hidden"}">
           <h3>${answerVisible ? "回忆答案" : "答案已隐藏"}</h3>
           ${
@@ -852,7 +958,8 @@ function filteredMemories() {
     const filterMatch =
       state.filter === "全部" ||
       memory.topic === state.filter ||
-      memory.status === state.filter;
+      memory.status === state.filter ||
+      memory.source === state.filter;
     const haystack = [memory.original, memory.translation, memory.language, memory.topic, memory.scene, memory.location, memory.story]
       .join(" ")
       .toLowerCase();
@@ -921,6 +1028,216 @@ function getOccurrenceRecords(memory) {
   ];
 }
 
+function contentLevelBlock(memory) {
+  return `
+    <div class="detail-block">
+      <h3>内容层级</h3>
+      <div class="level-list">${(memory.contentBlocks || []).map((block) => manualBlockItem(block)).join("")}</div>
+    </div>
+  `;
+}
+
+function sourceDescription(memory) {
+  if (memory.sourceKind === "manual-text") {
+    const blockCount = memory.contentBlocks?.length || 1;
+    const pending = memory.pending ? " 正在等待 AI 生成自然译法和学习解释。" : "";
+    return `${memory.source || "手动输入"} · 已保存原文和 ${blockCount} 个层级内容。已出现 ${memory.occurrences || 1} 次。${pending}`;
+  }
+  return `${memory.source} · 原图默认隐藏，只展示文字区域。已出现 ${memory.occurrences} 次。${sourceOcrSummary(memory)}`;
+}
+
+function normalizeManualText(value) {
+  return String(value || "")
+    .replace(/\r\n?/gu, "\n")
+    .replace(/[ \t]+/gu, " ")
+    .replace(/\n{3,}/gu, "\n\n")
+    .trim();
+}
+
+function splitManualText(text) {
+  if (!text) return [];
+  const blocks = [];
+  if (text.length > 80 || text.includes("\n")) {
+    addManualBlock(blocks, text, "paragraph", 100);
+  }
+
+  const sentences = text.match(/[^。！？!?；;.\n]+[。！？!?；;.]?/gu) || [];
+  sentences
+    .map((item) => item.trim())
+    .filter((item) => item.length >= 2)
+    .slice(0, 6)
+    .forEach((item) => addManualBlock(blocks, item, inferManualLevel(item), item.length > 24 ? 88 : 82));
+
+  text
+    .split(/[\n。！？!?；;.,，、:：()（）"“”]+/u)
+    .map((item) => item.trim())
+    .filter((item) => item.length >= 2 && item.length <= 36 && item !== text)
+    .slice(0, 8)
+    .forEach((item) => addManualBlock(blocks, item, "phrase", 72));
+
+  const wordMatches =
+    text.match(/[A-Za-z][A-Za-z'-]{1,}|[\p{Script=Hiragana}\p{Script=Katakana}ー]{2,}|[\p{Script=Hangul}]{2,}|[\p{Script=Han}]{1,4}|[ก-๙]{2,}/gu) || [];
+  wordMatches
+    .map((item) => item.trim())
+    .filter((item) => item.length >= 2 && item.length <= 18)
+    .slice(0, 10)
+    .forEach((item) => addManualBlock(blocks, item, "word", 58));
+
+  if (blocks.length === 0) addManualBlock(blocks, text, inferManualLevel(text), 82);
+  return blocks.sort((a, b) => b.weight - a.weight).slice(0, 12);
+}
+
+function addManualBlock(blocks, text, level, weight) {
+  const normalized = normalizeManualText(text);
+  if (!normalized) return;
+  const key = normalized.toLocaleLowerCase();
+  if (blocks.some((block) => block.key === key)) return;
+  const levelValue = typeof level === "string" ? level : inferManualLevel(normalized);
+  blocks.push({
+    id: `manual-block-${blocks.length + 1}`,
+    key,
+    text: normalized,
+    level: levelValue,
+    levelLabel: manualLevelLabel(levelValue),
+    language: inferManualLanguage(normalized),
+    weight,
+  });
+}
+
+function inferManualLevel(text) {
+  const normalized = normalizeManualText(text);
+  if (normalized.includes("\n") || normalized.length > 80) return "paragraph";
+  if (/[。！？!?；;.]/u.test(normalized) || normalized.split(/\s+/u).length > 6 || normalized.length > 36) return "sentence";
+  if (normalized.split(/\s+/u).length > 1 || normalized.length > 6) return "phrase";
+  return "word";
+}
+
+function manualLevelLabel(level) {
+  return {
+    word: "单词",
+    phrase: "短语",
+    sentence: "句子",
+    paragraph: "段落",
+  }[level] || "表达";
+}
+
+function summarizeManualLevels(blocks) {
+  if (!blocks.length) return "输入后会自动拆成单词、短语、句子和表达层级。";
+  const counts = blocks.reduce((result, block) => {
+    result[block.levelLabel] = (result[block.levelLabel] || 0) + 1;
+    return result;
+  }, {});
+  return Object.entries(counts)
+    .map(([label, count]) => `${label} ${count}`)
+    .join(" · ");
+}
+
+function manualBlockItem(block) {
+  return `
+    <span class="level-item">
+      <small>${escapeHtml(block.levelLabel)} · 权重 ${block.weight}</small>
+      <strong>${escapeHtml(clipText(block.text, 80))}</strong>
+    </span>
+  `;
+}
+
+function buildManualMemoryDraft(text, blocks = splitManualText(text)) {
+  const language = inferManualLanguage(text);
+  const scene = inferManualScene(text);
+  const translation = quickTranslateManualText(text);
+  const level = manualLevelLabel(inferManualLevel(text));
+  const similar = blocks
+    .filter((block) => block.text !== text)
+    .slice(0, 5)
+    .map((block) => block.text);
+  return {
+    original: text,
+    translation: translation.text,
+    literal: translation.literal,
+    language,
+    level,
+    weight: blocks[0]?.weight || 82,
+    topic: manualTopicForScene(scene),
+    scene,
+    tone: "中性",
+    difficulty: inferManualDifficulty(text),
+    usage: translation.known
+      ? `${scene}里可以直接理解为“${translation.text}”。`
+      : "已保存原文和拆分层级；填写 DeepSeek Key 后会补充自然中文译法、使用场景、例句和易错点。",
+    example: `${clipText(text, 72)} / ${translation.known ? translation.text : "等待 DeepSeek 生成自然中文"}`,
+    similar: similar.length ? similar : [level, scene],
+    mistake: translation.known ? "不要只背中文，要连同出现的场景一起记。" : "长句和段落不要只逐词硬背，先理解整句语气和使用场景。",
+    contentBlocks: blocks,
+  };
+}
+
+function quickTranslateManualText(text) {
+  const normalized = normalizeManualText(text);
+  const lower = normalized.toLocaleLowerCase();
+  const match = manualTranslationHints.find(([source]) => lower.includes(source.toLocaleLowerCase()));
+  if (match) {
+    return {
+      text: match[1],
+      literal: match[2],
+      known: true,
+    };
+  }
+  if (/[\u4e00-\u9fff]/u.test(normalized) && !/[\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u.test(normalized)) {
+    return {
+      text: "已是中文内容",
+      literal: normalized,
+      known: true,
+    };
+  }
+  return {
+    text: `待翻译：${clipText(normalized, 18)}`,
+    literal: "等待生成直译参考",
+    known: false,
+  };
+}
+
+function inferManualLanguage(text) {
+  if (/[\p{Script=Hiragana}\p{Script=Katakana}]/u.test(text)) return "日文";
+  if (/[\p{Script=Hangul}]/u.test(text)) return "韩文";
+  if (/[ก-๙]/u.test(text)) return "泰文";
+  if (/[A-Za-z]/u.test(text)) return "英文";
+  if (/[\u4e00-\u9fff]/u.test(text)) return "中文/汉字";
+  return "自动识别";
+}
+
+function inferManualScene(text) {
+  const lower = text.toLocaleLowerCase();
+  if (/ラーメン|menu|restaurant|spicy|take away|dine in|餐|菜单|咖啡|饭|食/u.test(lower)) return "餐厅点餐";
+  if (/exit|entrance|station|platform|boarding gate|gate|出口|入口|站|机场|登机/u.test(lower)) return "交通指路";
+  if (/cash only|tax free|sale|price|coupon|购物|免税|付款|现金/u.test(lower)) return "购物付款";
+  if (/how to use|instruction|warning|caution|manual|説明|说明|使用|注意/u.test(lower)) return "商品说明";
+  if (/check-in|hotel|passport|booking|reservation|酒店|护照|预约/u.test(lower)) return "住宿出行";
+  return "旅行场景";
+}
+
+function manualTopicForScene(scene, fallback = "旅行") {
+  return {
+    餐厅点餐: "餐饮",
+    交通指路: "交通",
+    购物付款: "购物",
+    商品说明: "购物",
+    住宿出行: "旅行",
+  }[scene] || fallback;
+}
+
+function inferManualDifficulty(text) {
+  const length = normalizeManualText(text).length;
+  if (length <= 16) return "A1";
+  if (length <= 48) return "A2";
+  if (length <= 120) return "B1";
+  return "B2";
+}
+
+function clipText(value, maxLength = 40) {
+  const text = String(value || "");
+  return text.length > maxLength ? `${text.slice(0, maxLength)}...` : text;
+}
+
 function recommendKeyBlocks(blocks = []) {
   return [...blocks]
     .filter((block) => block.text && block.confidence >= 0.86)
@@ -983,6 +1300,28 @@ function bindEvents(root) {
     await saveRuntimeApiKey();
   });
 
+  root.querySelector("[data-manual-text]")?.addEventListener("input", (event) => {
+    state.manualInput.text = event.target.value;
+    state.manualInput.previewReady = false;
+  });
+
+  root.querySelector("[data-manual-form]")?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    if (state.manualInput.previewReady) {
+      await addManualMemory();
+    } else {
+      previewManualMemory();
+    }
+  });
+
+  root.querySelectorAll("[data-manual-sample]").forEach((button) => {
+    button.addEventListener("click", () => {
+      state.manualInput.text = button.dataset.manualSample || "";
+      state.manualInput.previewReady = false;
+      render();
+    });
+  });
+
   root.querySelectorAll("[data-toggle]").forEach((button) => {
     button.addEventListener("click", async () => {
       const key = button.dataset.toggle;
@@ -1043,6 +1382,16 @@ function bindEvents(root) {
 async function handleAction(action) {
   if (action === "save-capture" || action === "preview-save" || action === "accept-all") {
     await addCapturedMemory(action);
+    return;
+  }
+  if (action === "clear-manual") {
+    state.manualInput = { text: "", previewReady: false };
+    render();
+    return;
+  }
+  if (action === "edit-manual") {
+    state.manualInput.previewReady = false;
+    render();
     return;
   }
   if (action === "process-queue") {
@@ -1164,6 +1513,99 @@ async function addCapturedMemory(action) {
   toast(`${label}，已进入离线队列，联网后补充 AI 整理`);
 }
 
+function previewManualMemory() {
+  const text = normalizeManualText(state.manualInput.text);
+  if (!text) {
+    toast("请先输入要翻译的文字");
+    return;
+  }
+  state.manualInput.text = text;
+  state.manualInput.previewReady = true;
+  render();
+  toast("已生成保存前预览，确认后再入库");
+}
+
+async function addManualMemory() {
+  const text = normalizeManualText(state.manualInput.text);
+  if (!text) {
+    toast("请先输入要翻译的文字");
+    return;
+  }
+  if (!state.manualInput.previewReady) {
+    previewManualMemory();
+    return;
+  }
+
+  const blocks = splitManualText(text);
+  const draft = buildManualMemoryDraft(text, blocks);
+  const now = new Date().toISOString();
+  const location = state.settings.location ? "当前旅行城市" : "可手动填写";
+  const existing = state.memories.find((item) => normalizeManualText(item.original).toLocaleLowerCase() === text.toLocaleLowerCase());
+  let memory;
+
+  if (existing) {
+    existing.occurrences = (existing.occurrences || 0) + 1;
+    existing.createdAt = now;
+    existing.pending = true;
+    existing.sourceKind = existing.sourceKind || "manual-text";
+    existing.source = existing.source || "手动输入";
+    existing.contentBlocks = draft.contentBlocks;
+    existing.fullText = text;
+    existing.occurrenceRecords = [
+      ...(existing.occurrenceRecords || []),
+      {
+        sourceImageId: "",
+        createdAt: now,
+        location,
+        source: "手动输入",
+        scene: draft.scene,
+        note: "再次手动输入时合并到同一条记忆，并保留这次上下文。",
+      },
+    ];
+    memory = existing;
+  } else {
+    memory = {
+      id: `mem-manual-${Date.now()}`,
+      ...draft,
+      location,
+      story: `${formatShortDate(now)} 手动输入这段文字，保存为可复习的旅行语言记忆。`,
+      status: "待复习",
+      occurrences: 1,
+      createdAt: now,
+      source: "手动输入",
+      sourceKind: "manual-text",
+      thumb: "manual",
+      pending: true,
+      fullText: text,
+      occurrenceRecords: [
+        {
+          sourceImageId: "",
+          createdAt: now,
+          location,
+          source: "手动输入",
+          scene: draft.scene,
+          note: "由手动输入保存；系统自动拆分为词、短语、句子或段落层级。",
+        },
+      ],
+    };
+    state.memories.unshift(memory);
+  }
+
+  await storage.saveMemory(memory);
+  const task = await storage.enqueueTask({
+    id: `task-${Date.now()}-manual-ai`,
+    type: "ai-enrich-manual",
+    memoryId: memory.id,
+    title: `翻译整理：${clipText(text, 20)}`,
+  });
+  state.queue = sortQueue([task, ...state.queue]);
+  state.memories = sortMemories(state.memories);
+  state.manualInput = { text: "", previewReady: false };
+  state.activeTab = "manual";
+  state.detailId = null;
+  toast("已保存到记忆库。点“补整理”时再填写 DeepSeek Key 并生成深度解释");
+}
+
 async function storeImportedImage(file) {
   const now = new Date().toISOString();
   const sourceImage = {
@@ -1205,6 +1647,31 @@ async function updateStatus(id, status) {
   }
 }
 
+function applyEnrichmentToMemory(memory, enrichment) {
+  const sections = enrichment.sections || {};
+  if (sections.natural) memory.translation = sections.natural;
+  if (sections.literal) memory.literal = sections.literal;
+  if (sections.scene) {
+    memory.scene = sections.scene;
+    memory.topic = manualTopicForScene(sections.scene, "") || memory.topic;
+  }
+  if (sections.tone) memory.tone = sections.tone;
+  if (sections.example) memory.example = sections.example;
+  if (Array.isArray(sections.similar) && sections.similar.length) memory.similar = sections.similar;
+  if (sections.mistake) memory.mistake = sections.mistake;
+  memory.pending = false;
+  memory.enrichedAt = enrichment.enrichedAt;
+  memory.aiProvider = enrichment.provider;
+  memory.aiProviderLabel = getAiProviderLabel(enrichment.provider);
+  memory.aiStatus = enrichment.status;
+  memory.aiExplanation = sections;
+  memory.aiModelProvider = enrichment.modelProvider || "";
+  memory.aiModel = enrichment.model || "";
+  memory.aiServerMode = enrichment.serverMode || "";
+  memory.aiResponseId = enrichment.providerResponseId || "";
+  memory.usage = enrichment.usage || memory.usage;
+}
+
 async function processOfflineQueue() {
   const pendingTasks = state.queue.filter((task) => task.status === "pending");
   if (pendingTasks.length === 0) {
@@ -1213,6 +1680,7 @@ async function processOfflineQueue() {
   }
   let blockedByApiKey = false;
   let processedCount = 0;
+  let generatedMemoryCount = 0;
   for (const task of pendingTasks) {
       if (task.type === "ocr-source-image") {
         const sourceImage = state.sourceImages.find((item) => item.id === task.sourceImageId) || (await storage.getSourceImage(task.sourceImageId));
@@ -1224,17 +1692,27 @@ async function processOfflineQueue() {
           sourceImage.updatedAt = new Date().toISOString();
           await storage.saveSourceImage(sourceImage);
           state.sourceImages = sortSourceImages(state.sourceImages.map((item) => (item.id === sourceImage.id ? sourceImage : item)));
+          generatedMemoryCount += await createMemoriesFromOcrSource(sourceImage);
         }
       }
 
-      if (task.type === "ai-enrich-capture") {
+      if (task.type === "ai-enrich-capture" || task.type === "ai-enrich-manual") {
         const memory = state.memories.find((item) => item.id === task.memoryId);
         if (memory) {
+          if (task.type === "ai-enrich-manual" && state.settings.aiProvider === "domestic-model-service" && !state.runtimeAiKey) {
+            blockedByApiKey = true;
+            await storage.updateTask({ ...task, status: "pending", lastError: "DeepSeek API Key required." });
+            openApiKeyDialog("补整理需要 DeepSeek API Key，保存后会继续生成真实翻译、中文解释、例句和复习卡片。", "process-queue");
+            break;
+          }
           const sourceImage =
             memory.sourceImageId ? state.sourceImages.find((item) => item.id === memory.sourceImageId) || (await storage.getSourceImage(memory.sourceImageId)) : null;
           const enrichment = await getAiAdapter().enrichMemory(memory, {
             sourceImage,
             ocr: sourceImage?.ocr,
+            inputMode: memory.sourceKind || "camera",
+            manualText: memory.sourceKind === "manual-text" ? memory.fullText || memory.original : "",
+            contentBlocks: memory.contentBlocks || [],
           });
           if (enrichment.status === "api-key-required") {
             blockedByApiKey = true;
@@ -1242,13 +1720,7 @@ async function processOfflineQueue() {
             openApiKeyDialog("需要 DeepSeek API Key 才能继续真实 AI 深度解释。保存后会继续处理离线队列。", "process-queue");
             break;
           }
-          memory.pending = false;
-          memory.enrichedAt = enrichment.enrichedAt;
-          memory.aiProvider = enrichment.provider;
-          memory.aiProviderLabel = getAiProviderLabel(enrichment.provider);
-          memory.aiStatus = enrichment.status;
-          memory.aiExplanation = enrichment.sections;
-          memory.usage = enrichment.usage;
+          applyEnrichmentToMemory(memory, enrichment);
           await storage.saveMemory(memory);
         }
       }
@@ -1260,7 +1732,133 @@ async function processOfflineQueue() {
     toast(processedCount ? `已处理 ${processedCount} 项，剩余 AI 整理需要填写 DeepSeek API Key` : "需要填写 DeepSeek API Key 才能继续 AI 整理");
     return;
   }
-  toast(`已处理 ${processedCount} 项：OCR 识别和 AI 整理状态已更新`);
+  const generatedText = generatedMemoryCount ? `，自动入库 ${generatedMemoryCount} 条 OCR 重点` : "";
+  toast(`已处理 ${processedCount} 项：OCR 识别和 AI 整理状态已更新${generatedText}`);
+}
+
+async function createMemoriesFromOcrSource(sourceImage) {
+  const blocks = sourceImage.recommendedKeyBlocks?.length ? sourceImage.recommendedKeyBlocks : recommendKeyBlocks(sourceImage.ocr?.blocks || []);
+  const newMemoryIds = [];
+  for (const block of blocks) {
+    const memory = buildMemoryFromOcrBlock(block, sourceImage);
+    const existing = state.memories.find((item) => normalizeManualText(item.original).toLocaleLowerCase() === normalizeManualText(memory.original).toLocaleLowerCase());
+    const savedMemory = existing ? mergeOcrOccurrence(existing, memory, block, sourceImage) : memory;
+    if (!existing) {
+      state.memories.unshift(savedMemory);
+      newMemoryIds.push(savedMemory.id);
+    }
+    await storage.saveMemory(savedMemory);
+    const task = await storage.enqueueTask({
+      id: `task-${Date.now()}-${block.id || newMemoryIds.length}-ocr-ai`,
+      type: "ai-enrich-capture",
+      memoryId: savedMemory.id,
+      sourceImageId: sourceImage.id,
+      title: `OCR 整理：${clipText(savedMemory.translation || savedMemory.original, 20)}`,
+    });
+    state.queue = sortQueue([task, ...state.queue]);
+  }
+
+  if (blocks.length) {
+    sourceImage.generatedMemoryIds = [...new Set([...(sourceImage.generatedMemoryIds || []), ...blocks.map((block) => block.id || block.text)])];
+    await storage.saveSourceImage(sourceImage);
+    state.sourceImages = sortSourceImages(state.sourceImages.map((item) => (item.id === sourceImage.id ? sourceImage : item)));
+    state.memories = sortMemories(state.memories);
+  }
+  return newMemoryIds.length;
+}
+
+function buildMemoryFromOcrBlock(block, sourceImage) {
+  const now = new Date().toISOString();
+  const original = normalizeManualText(block.text);
+  const translation = block.translationHint || quickTranslateManualText(original).text;
+  const literal = block.translationHint || quickTranslateManualText(original).literal;
+  const scene = inferManualScene([original, sourceImage.ocr?.text || "", sourceImage.displayName || ""].join(" "));
+  const language = ocrLanguageLabel(block.language || sourceImage.ocr?.detectedLanguages?.[0] || original);
+  const level = manualLevelLabel(block.level || inferManualLevel(original));
+  const sourceName = sourceImage.displayName || sourceImage.originalName || "来源图片";
+  return {
+    id: `mem-ocr-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    original,
+    translation,
+    literal,
+    language,
+    level,
+    weight: Math.round(blockPriorityScore(block) * 8),
+    topic: manualTopicForScene(scene),
+    scene,
+    tone: "中性",
+    difficulty: inferManualDifficulty(original),
+    usage: block.translationHint ? `${scene}里可以理解为“${translation}”。` : "OCR 已自动入库；点“补整理”后会生成自然中文译法、使用场景、例句和易错点。",
+    example: `${original} / ${block.translationHint ? translation : "等待补整理生成自然中文"}`,
+    similar: buildOcrSimilar(block, sourceImage),
+    mistake: "不要只看 OCR 单词，要结合来源图片中的位置和当时场景一起记。",
+    location: state.settings.location ? "当前旅行城市" : "可手动填写",
+    story: `${formatShortDate(now)} 从${sourceName}识别到这条外语内容，已自动保存为记忆。`,
+    status: "待复习",
+    occurrences: 1,
+    createdAt: now,
+    source: sourceName,
+    sourceKind: "ocr-image",
+    thumb: thumbForOcrSource(sourceImage),
+    pending: true,
+    sourceImageId: sourceImage.id,
+    sourceImageIds: [sourceImage.id],
+    ocrBlockId: block.id || "",
+    occurrenceRecords: [
+      {
+        sourceImageId: sourceImage.id,
+        createdAt: now,
+        location: state.settings.location ? "当前旅行城市" : "可手动填写",
+        source: sourceName,
+        scene,
+        note: "真实 OCR 识别后由系统推荐为重点，并自动保存到记忆库。",
+      },
+    ],
+  };
+}
+
+function mergeOcrOccurrence(existing, memory, block, sourceImage) {
+  const hasSameSource = (existing.occurrenceRecords || []).some((record) => record.sourceImageId === sourceImage.id && record.ocrBlockId === block.id);
+  if (!hasSameSource) {
+    existing.occurrences = (existing.occurrences || 0) + 1;
+    existing.createdAt = memory.createdAt;
+    existing.pending = true;
+    existing.sourceImageId = existing.sourceImageId || sourceImage.id;
+    existing.sourceImageIds = appendUnique(existing.sourceImageIds || [], sourceImage.id);
+    existing.occurrenceRecords = [
+      ...(existing.occurrenceRecords || []),
+      {
+        ...memory.occurrenceRecords[0],
+        ocrBlockId: block.id || "",
+        note: "OCR 再次识别到同一表达，已合并并保留这次来源。",
+      },
+    ];
+  }
+  return existing;
+}
+
+function buildOcrSimilar(block, sourceImage) {
+  const sourceBlocks = sourceImage.ocr?.blocks || [];
+  return sourceBlocks
+    .map((item) => item.text)
+    .filter((text) => text && text !== block.text)
+    .slice(0, 4);
+}
+
+function ocrLanguageLabel(language) {
+  const text = String(language || "");
+  if (text.startsWith("ja") || /[\p{Script=Hiragana}\p{Script=Katakana}]/u.test(text)) return "日文";
+  if (text.startsWith("en") || /[A-Za-z]/u.test(text)) return "英文";
+  if (text.startsWith("ko") || /[\p{Script=Hangul}]/u.test(text)) return "韩文";
+  if (text.startsWith("zh") || /[\u4e00-\u9fff]/u.test(text)) return "中文/汉字";
+  return "自动识别";
+}
+
+function thumbForOcrSource(sourceImage) {
+  const name = `${sourceImage.displayName || ""} ${sourceImage.originalName || ""}`.toLocaleLowerCase();
+  if (/exit|station|sign|路牌|车站|地铁/u.test(name)) return "sign";
+  if (/manual|how|说明|包装/u.test(name)) return "manual";
+  return "menu";
 }
 
 function openApiKeyDialog(message = "", pendingAction = "") {
@@ -1423,8 +2021,17 @@ function escapeAttr(value) {
   return String(value).replaceAll("&", "&amp;").replaceAll('"', "&quot;").replaceAll("<", "&lt;");
 }
 
+function escapeHtml(value) {
+  return String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
 if ("serviceWorker" in navigator) {
-  navigator.serviceWorker.register("./service-worker.js?v=10").catch(() => {});
+  navigator.serviceWorker.register("./service-worker.js?v=13").catch(() => {});
 }
 
 render();

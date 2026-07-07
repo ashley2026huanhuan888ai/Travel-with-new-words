@@ -98,7 +98,10 @@ export function buildDomesticModelPayload(memory, context = {}) {
       difficulty: memory.difficulty || "",
     },
     source: {
+      inputMode: context.inputMode || memory.sourceKind || "camera",
       ocrText: context.ocr?.text || "",
+      manualText: context.manualText || memory.fullText || "",
+      contentBlocks: context.contentBlocks || memory.contentBlocks || [],
       location: memory.location || context.sourceImage?.location || "",
       story: memory.story || "",
       sourceImageId: memory.sourceImageId || context.sourceImage?.id || "",

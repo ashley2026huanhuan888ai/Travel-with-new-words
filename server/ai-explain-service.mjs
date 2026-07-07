@@ -138,13 +138,13 @@ function buildMessages(payload) {
     {
       role: "system",
       content:
-        "你是面向中国出境旅行者的语言记忆教练。请只输出合法 JSON，不要输出 Markdown。JSON 必须包含 usage 和 sections；sections 必须包含 literal、natural、scene、tone、example、similar、mistake。",
+        "你是面向中国出境旅行者的语言记忆教练。请只输出合法 JSON，不要输出 Markdown。JSON 必须包含 usage 和 sections；sections 必须包含 literal、natural、scene、tone、example、similar、mistake。如果中文译文为空、明显是占位，或用户是手动输入原文，请先给出自然中文译法。",
     },
     {
       role: "user",
       content: JSON.stringify(
         {
-          task: "解释相机翻译识别到的词、短语、句子或表达，帮助用户真正理解和记住。",
+          task: "解释相机翻译或手动输入的词、短语、句子、段落或表达，帮助用户真正理解和记住。",
           outputExample: {
             usage: "菜单里常见的菜名表达。",
             sections: {
