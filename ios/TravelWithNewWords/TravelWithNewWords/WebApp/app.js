@@ -1,6 +1,6 @@
-import { storage } from "./storage.js?v=13";
-import { createAiExplanationAdapter, getAiProviderLabel } from "./ai.js?v=13";
-import { createOcrAdapter, getOcrProviderLabel, ocrProviderOptions } from "./ocr.js?v=13";
+import { storage } from "./storage.js?v=14";
+import { createAiExplanationAdapter, getAiProviderLabel } from "./ai.js?v=14";
+import { createOcrAdapter, getOcrProviderLabel, ocrProviderOptions } from "./ocr.js?v=14";
 
 const icons = {
   home: "M3 10.5 12 3l9 7.5V21a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z",
@@ -462,9 +462,9 @@ function homeScreen() {
 function captureScreen() {
   const selected = captureSuggestions[0];
   const sourceImage = state.lastSourceImageId ? state.sourceImages.find((item) => item.id === state.lastSourceImageId) : null;
-  const recommendedBlocks = sourceImage?.recommendedKeyBlocks || [];
+  const weightedBlocks = sourceImage?.weightedOcrBlocks || sourceImage?.recommendedKeyBlocks || [];
   const detectedCount = sourceImage?.ocr?.blocks?.length || 3;
-  const recommendedCount = recommendedBlocks.length || 1;
+  const savedCount = weightedBlocks.length || detectedCount;
   return `
     ${topbar(
       `<button class="icon-button" data-tab="home" aria-label="关闭">${icon("back")}</button> 日文 → 中文`,
@@ -487,12 +487,12 @@ function captureScreen() {
 
       <div class="ai-sheet">
         <div class="ai-sheet-head">
-          <span>系统推荐重点</span>
-          <button class="link-button" data-action="accept-all">全选</button>
+          <span>自动入库内容</span>
+          <button class="link-button" data-action="accept-all">全部入库</button>
         </div>
         <div class="source-policy">
-          <strong>${recommendedCount} 条重点会生成记忆</strong>
-          <span>其余 ${Math.max(detectedCount - recommendedCount, 0)} 条文字保留在来源记录里，可在详情回看。</span>
+          <strong>${savedCount} 条 OCR 文字会生成记忆</strong>
+          <span>全部识别内容都会保存，系统按置信度、长度和层级分配权重，权重高的优先复习。</span>
         </div>
         <div class="translation-result">
           <small>${selected.original} ${icon("volume", "meta-icon")}</small>
@@ -990,8 +990,8 @@ function sourceOcrSummary(memory) {
     const ocr = sourceImage.ocr;
     const fallback = ocr.fallbackFrom ? `${getOcrProviderLabel(ocr.fallbackFrom)} 不可用，已用${ocr.providerLabel || getOcrProviderLabel(ocr.provider)}。` : `使用${ocr.providerLabel || getOcrProviderLabel(ocr.provider)}。`;
     const reason = ocr.fallbackReason ? ` ${ocr.fallbackReason}` : "";
-    const keyCount = sourceImage.recommendedKeyBlocks?.length || 0;
-    return ` OCR 已识别 ${ocr.blocks.length} 个文字块，推荐重点 ${keyCount} 条，${fallback}${reason}`;
+    const savedCount = sourceImage.weightedOcrBlocks?.length || sourceImage.recommendedKeyBlocks?.length || ocr.blocks.length || 0;
+    return ` OCR 已识别 ${ocr.blocks.length} 个文字块，自动入库 ${savedCount} 条并按权重排序，${fallback}${reason}`;
   }
   return " OCR 等待离线队列处理。";
 }
@@ -1245,6 +1245,20 @@ function recommendKeyBlocks(blocks = []) {
     .slice(0, 2);
 }
 
+function rankOcrBlocks(blocks = []) {
+  return [...blocks]
+    .filter((block) => normalizeManualText(block.text))
+    .map((block) => ({
+      ...block,
+      memoryWeight: memoryWeightForBlock(block),
+    }))
+    .sort((a, b) => b.memoryWeight - a.memoryWeight);
+}
+
+function memoryWeightForBlock(block) {
+  return Math.max(1, Math.min(100, Math.round(blockPriorityScore(block) * 6.5)));
+}
+
 function blockPriorityScore(block) {
   const levelBoost = { expression: 4, phrase: 3, sentence: 2, word: 1 }[block.level] || 1;
   const lengthBoost = Math.min(String(block.text || "").length / 10, 4);
@@ -1493,7 +1507,7 @@ async function addCapturedMemory(action) {
           location: state.settings.location ? "日本 · 东京" : "可手动填写",
           source: state.lastImportName || "菜单",
           scene: "餐厅点餐",
-          note: "由系统推荐为重点内容，其余 OCR 文字保存在来源记录。",
+          note: "OCR 内容会全部入库，系统按权重安排复习优先级。",
         },
       ],
     };
@@ -1509,7 +1523,7 @@ async function addCapturedMemory(action) {
   };
   state.queue.unshift(await storage.enqueueTask(task));
   state.memories = sortMemories(state.memories);
-  const label = action === "accept-all" ? "已接受全部 AI 推荐重点" : "已保存重点记忆";
+  const label = action === "accept-all" ? "已确认全部 OCR 内容入库" : "已保存记忆";
   toast(`${label}，已进入离线队列，联网后补充 AI 整理`);
 }
 
@@ -1687,7 +1701,8 @@ async function processOfflineQueue() {
         if (sourceImage) {
           const ocr = await getOcrAdapter().recognize(sourceImage);
           sourceImage.ocr = ocr;
-          sourceImage.recommendedKeyBlocks = recommendKeyBlocks(ocr.blocks);
+          sourceImage.weightedOcrBlocks = rankOcrBlocks(ocr.blocks);
+          sourceImage.recommendedKeyBlocks = sourceImage.weightedOcrBlocks;
           sourceImage.ocrStatus = "done";
           sourceImage.updatedAt = new Date().toISOString();
           await storage.saveSourceImage(sourceImage);
@@ -1732,12 +1747,12 @@ async function processOfflineQueue() {
     toast(processedCount ? `已处理 ${processedCount} 项，剩余 AI 整理需要填写 DeepSeek API Key` : "需要填写 DeepSeek API Key 才能继续 AI 整理");
     return;
   }
-  const generatedText = generatedMemoryCount ? `，自动入库 ${generatedMemoryCount} 条 OCR 重点` : "";
+  const generatedText = generatedMemoryCount ? `，自动入库 ${generatedMemoryCount} 条 OCR 内容并按权重排序` : "";
   toast(`已处理 ${processedCount} 项：OCR 识别和 AI 整理状态已更新${generatedText}`);
 }
 
 async function createMemoriesFromOcrSource(sourceImage) {
-  const blocks = sourceImage.recommendedKeyBlocks?.length ? sourceImage.recommendedKeyBlocks : recommendKeyBlocks(sourceImage.ocr?.blocks || []);
+  const blocks = sourceImage.weightedOcrBlocks?.length ? sourceImage.weightedOcrBlocks : rankOcrBlocks(sourceImage.ocr?.blocks || []);
   const newMemoryIds = [];
   for (const block of blocks) {
     const memory = buildMemoryFromOcrBlock(block, sourceImage);
@@ -1783,7 +1798,7 @@ function buildMemoryFromOcrBlock(block, sourceImage) {
     literal,
     language,
     level,
-    weight: Math.round(blockPriorityScore(block) * 8),
+    weight: block.memoryWeight || memoryWeightForBlock(block),
     topic: manualTopicForScene(scene),
     scene,
     tone: "中性",
@@ -2031,7 +2046,7 @@ function escapeHtml(value) {
 }
 
 if ("serviceWorker" in navigator) {
-  navigator.serviceWorker.register("./service-worker.js?v=13").catch(() => {});
+  navigator.serviceWorker.register("./service-worker.js?v=14").catch(() => {});
 }
 
 render();

@@ -31,7 +31,7 @@ npm run dev
 Then open:
 
 ```text
-http://localhost:4174/index.html?v=13
+http://localhost:4174/index.html?v=14
 ```
 
 By default the AI endpoint uses a local mock and does not call any external model.
