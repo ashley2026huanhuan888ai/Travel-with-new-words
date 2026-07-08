@@ -864,6 +864,83 @@ button {
   font-weight: 800;
 }
 
+.manual-language-panel {
+  display: grid;
+  gap: 10px;
+}
+
+.manual-language-group {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: #f8fbfa;
+}
+
+.manual-language-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: center;
+}
+
+.manual-language-head strong {
+  font-size: 13px;
+}
+
+.manual-language-head span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.manual-language-row {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.manual-language-row::-webkit-scrollbar {
+  display: none;
+}
+
+.manual-language-row button {
+  flex: 0 0 auto;
+  min-width: 72px;
+  min-height: 48px;
+  padding: 7px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: white;
+  color: var(--text);
+  text-align: left;
+}
+
+.manual-language-row button.active {
+  border-color: var(--green);
+  background: var(--green-soft);
+  color: var(--green-dark);
+}
+
+.manual-language-row strong,
+.manual-language-row small {
+  display: block;
+}
+
+.manual-language-row strong {
+  font-size: 13px;
+  line-height: 1.15;
+}
+
+.manual-language-row small {
+  margin-top: 5px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 750;
+}
+
 .manual-meta-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);

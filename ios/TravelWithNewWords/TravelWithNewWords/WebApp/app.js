@@ -1,6 +1,6 @@
-import { storage } from "./storage.js?v=14";
-import { createAiExplanationAdapter, getAiProviderLabel } from "./ai.js?v=14";
-import { createOcrAdapter, getOcrProviderLabel, ocrProviderOptions } from "./ocr.js?v=14";
+import { storage } from "./storage.js?v=15";
+import { createAiExplanationAdapter, getAiProviderLabel } from "./ai.js?v=15";
+import { createOcrAdapter, getOcrProviderLabel, ocrProviderOptions } from "./ocr.js?v=15";
 
 const icons = {
   home: "M3 10.5 12 3l9 7.5V21a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z",
@@ -181,9 +181,28 @@ const manualTranslationHints = [
   ["餃子", "饺子", "日式煎饺或饺子"],
 ];
 
+const manualSourceLanguageOptions = [
+  { id: "auto", label: "自动识别", hint: "不预设" },
+  { id: "ja", label: "日文", hint: "日本" },
+  { id: "en", label: "英文", hint: "英语区" },
+  { id: "ko", label: "韩文", hint: "韩国" },
+  { id: "th", label: "泰文", hint: "泰国" },
+  { id: "fr", label: "法文", hint: "法国" },
+  { id: "es", label: "西班牙文", hint: "西语区" },
+  { id: "zh", label: "中文", hint: "中文内容" },
+];
+
+const manualTargetLanguageOptions = [
+  { id: "zh", label: "中文", hint: "默认" },
+  { id: "en", label: "英文", hint: "英文输出" },
+  { id: "ja", label: "日文", hint: "日文输出" },
+  { id: "ko", label: "韩文", hint: "韩文输出" },
+  { id: "th", label: "泰文", hint: "泰文输出" },
+];
+
 const exportFields = [
   ["original", "原文"],
-  ["translation", "中文译文"],
+  ["translation", "译文"],
   ["literal", "直译"],
   ["language", "语言"],
   ["topic", "主题"],
@@ -249,6 +268,8 @@ const defaultState = {
     aiNetworkEnabled: false,
     domesticAiEndpoint: "/api/ai/explain",
     reviewMode: "travel-diary",
+    manualSourceLanguage: "auto",
+    manualTargetLanguage: "zh",
   },
   reviewRevealed: false,
   memories: seedMemories,
@@ -515,7 +536,9 @@ function manualScreen() {
   const blocks = splitManualText(normalizedText);
   const previewReady = state.manualInput.previewReady && normalizedText;
   const preview = previewReady ? buildManualMemoryDraft(normalizedText, blocks) : null;
-  const language = normalizedText ? inferManualLanguage(normalizedText) : "自动识别";
+  const inputLanguage = getManualLanguageOption("source", state.settings.manualSourceLanguage);
+  const outputLanguage = getManualLanguageOption("target", state.settings.manualTargetLanguage);
+  const language = getManualInputLanguageLabel();
   const scene = normalizedText ? inferManualScene(normalizedText) : "旅行场景";
   const levelSummary = summarizeManualLevels(blocks);
   const samples = ["No smoking in this area.", "辛味噌ラーメンをください。", "Cash only"];
@@ -537,10 +560,15 @@ function manualScreen() {
           ${samples.map((sample) => `<button type="button" data-manual-sample="${escapeAttr(sample)}">${escapeHtml(sample)}</button>`).join("")}
         </div>
 
+        <div class="manual-language-panel">
+          ${manualLanguageSelector("输入语言", "source", manualSourceLanguageOptions, inputLanguage.id)}
+          ${manualLanguageSelector("输出语言", "target", manualTargetLanguageOptions, outputLanguage.id)}
+        </div>
+
         <div class="manual-meta-grid">
-          <span><strong>${language}</strong><small>语言</small></span>
+          <span><strong>${language}</strong><small>输入</small></span>
+          <span><strong>${outputLanguage.label}</strong><small>输出</small></span>
           <span><strong>${scene}</strong><small>场景</small></span>
-          <span><strong>${blocks.length || 0}</strong><small>层级</small></span>
         </div>
 
         <div class="source-policy manual-policy">
@@ -636,7 +664,7 @@ function detailScreen() {
         <p>${memory.literal}</p>
       </div>
       <div class="detail-block">
-        <h3>自然中文翻译 ${icon("volume", "meta-icon")}</h3>
+        <h3>自然译文 ${icon("volume", "meta-icon")}</h3>
         <strong style="color: var(--green)">${memory.translation}</strong>
         <p>${memory.usage}</p>
       </div>
@@ -703,7 +731,7 @@ function reviewScreen() {
         <span class="${thumbClass(memory.thumb)}" aria-hidden="true"></span>
         <span class="review-kicker">${memory.location} · ${memory.scene}</span>
         <h2>${memory.story}</h2>
-        <p>回想当时来源里的外语表达、中文意思和使用场景。</p>
+        <p>回想当时来源里的外语表达、译文意思和使用场景。</p>
         <div class="detail-block ${answerVisible ? "" : "answer-hidden"}">
           <h3>${answerVisible ? "回忆答案" : "答案已隐藏"}</h3>
           ${
@@ -1099,7 +1127,7 @@ function addManualBlock(blocks, text, level, weight) {
     text: normalized,
     level: levelValue,
     levelLabel: manualLevelLabel(levelValue),
-    language: inferManualLanguage(normalized),
+    language: getManualInputLanguageLabel(),
     weight,
   });
 }
@@ -1142,7 +1170,9 @@ function manualBlockItem(block) {
 }
 
 function buildManualMemoryDraft(text, blocks = splitManualText(text)) {
-  const language = inferManualLanguage(text);
+  const language = getManualInputLanguageLabel();
+  const targetLanguage = getManualOutputLanguageLabel();
+  const targetLanguageCode = state.settings.manualTargetLanguage || "zh";
   const scene = inferManualScene(text);
   const translation = quickTranslateManualText(text);
   const level = manualLevelLabel(inferManualLevel(text));
@@ -1155,6 +1185,8 @@ function buildManualMemoryDraft(text, blocks = splitManualText(text)) {
     translation: translation.text,
     literal: translation.literal,
     language,
+    targetLanguage,
+    targetLanguageCode,
     level,
     weight: blocks[0]?.weight || 82,
     topic: manualTopicForScene(scene),
@@ -1163,8 +1195,8 @@ function buildManualMemoryDraft(text, blocks = splitManualText(text)) {
     difficulty: inferManualDifficulty(text),
     usage: translation.known
       ? `${scene}里可以直接理解为“${translation.text}”。`
-      : "已保存原文和拆分层级；填写 DeepSeek Key 后会补充自然中文译法、使用场景、例句和易错点。",
-    example: `${clipText(text, 72)} / ${translation.known ? translation.text : "等待 DeepSeek 生成自然中文"}`,
+      : `已保存原文和拆分层级；填写 DeepSeek Key 后会补充自然${targetLanguage}译法、使用场景、例句和易错点。`,
+    example: `${clipText(text, 72)} / ${translation.known ? translation.text : `等待 DeepSeek 生成${targetLanguage}译法`}`,
     similar: similar.length ? similar : [level, scene],
     mistake: translation.known ? "不要只背中文，要连同出现的场景一起记。" : "长句和段落不要只逐词硬背，先理解整句语气和使用场景。",
     contentBlocks: blocks,
@@ -1174,7 +1206,9 @@ function buildManualMemoryDraft(text, blocks = splitManualText(text)) {
 function quickTranslateManualText(text) {
   const normalized = normalizeManualText(text);
   const lower = normalized.toLocaleLowerCase();
-  const match = manualTranslationHints.find(([source]) => lower.includes(source.toLocaleLowerCase()));
+  const targetLanguage = getManualLanguageOption("target", state.settings.manualTargetLanguage);
+  const targetIsChinese = targetLanguage.id === "zh";
+  const match = targetIsChinese ? manualTranslationHints.find(([source]) => lower.includes(source.toLocaleLowerCase())) : null;
   if (match) {
     return {
       text: match[1],
@@ -1182,7 +1216,7 @@ function quickTranslateManualText(text) {
       known: true,
     };
   }
-  if (/[\u4e00-\u9fff]/u.test(normalized) && !/[\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u.test(normalized)) {
+  if (targetIsChinese && /[\u4e00-\u9fff]/u.test(normalized) && !/[\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u.test(normalized)) {
     return {
       text: "已是中文内容",
       literal: normalized,
@@ -1190,10 +1224,46 @@ function quickTranslateManualText(text) {
     };
   }
   return {
-    text: `待翻译：${clipText(normalized, 18)}`,
+    text: `待翻译成${targetLanguage.label}：${clipText(normalized, 18)}`,
     literal: "等待生成直译参考",
     known: false,
   };
+}
+
+function getManualLanguageOption(kind, id) {
+  const options = kind === "target" ? manualTargetLanguageOptions : manualSourceLanguageOptions;
+  return options.find((item) => item.id === id) || options[0];
+}
+
+function getManualInputLanguageLabel() {
+  return getManualLanguageOption("source", state.settings.manualSourceLanguage).label;
+}
+
+function getManualOutputLanguageLabel() {
+  return getManualLanguageOption("target", state.settings.manualTargetLanguage).label;
+}
+
+function manualLanguageSelector(title, kind, options, selectedId) {
+  return `
+    <section class="manual-language-group" aria-label="${escapeAttr(title)}">
+      <div class="manual-language-head">
+        <strong>${escapeHtml(title)}</strong>
+        <span>${kind === "source" ? "不预设英文" : "选择后保持"}</span>
+      </div>
+      <div class="manual-language-row">
+        ${options
+          .map(
+            (option) => `
+          <button type="button" class="${option.id === selectedId ? "active" : ""}" data-manual-language-kind="${kind}" data-manual-language="${option.id}">
+            <strong>${escapeHtml(option.label)}</strong>
+            <small>${escapeHtml(option.hint)}</small>
+          </button>
+        `
+          )
+          .join("")}
+      </div>
+    </section>
+  `;
 }
 
 function inferManualLanguage(text) {
@@ -1333,6 +1403,22 @@ function bindEvents(root) {
       state.manualInput.text = button.dataset.manualSample || "";
       state.manualInput.previewReady = false;
       render();
+    });
+  });
+
+  root.querySelectorAll("[data-manual-language]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const kind = button.dataset.manualLanguageKind;
+      const value = button.dataset.manualLanguage;
+      if (kind === "source") {
+        state.settings.manualSourceLanguage = value;
+      } else {
+        state.settings.manualTargetLanguage = value;
+      }
+      state.manualInput.previewReady = false;
+      await storage.saveSettings(state.settings);
+      render();
+      toast(`${kind === "source" ? "输入语言" : "输出语言"}已设为：${button.querySelector("strong").textContent}`);
     });
   });
 
@@ -1563,6 +1649,11 @@ async function addManualMemory() {
     existing.pending = true;
     existing.sourceKind = existing.sourceKind || "manual-text";
     existing.source = existing.source || "手动输入";
+    existing.language = draft.language;
+    existing.targetLanguage = draft.targetLanguage;
+    existing.targetLanguageCode = draft.targetLanguageCode;
+    existing.translation = draft.translation;
+    existing.literal = draft.literal;
     existing.contentBlocks = draft.contentBlocks;
     existing.fullText = text;
     existing.occurrenceRecords = [
@@ -1803,8 +1894,8 @@ function buildMemoryFromOcrBlock(block, sourceImage) {
     scene,
     tone: "中性",
     difficulty: inferManualDifficulty(original),
-    usage: block.translationHint ? `${scene}里可以理解为“${translation}”。` : "OCR 已自动入库；点“补整理”后会生成自然中文译法、使用场景、例句和易错点。",
-    example: `${original} / ${block.translationHint ? translation : "等待补整理生成自然中文"}`,
+    usage: block.translationHint ? `${scene}里可以理解为“${translation}”。` : "OCR 已自动入库；点“补整理”后会生成自然译法、使用场景、例句和易错点。",
+    example: `${original} / ${block.translationHint ? translation : "等待补整理生成自然译法"}`,
     similar: buildOcrSimilar(block, sourceImage),
     mistake: "不要只看 OCR 单词，要结合来源图片中的位置和当时场景一起记。",
     location: state.settings.location ? "当前旅行城市" : "可手动填写",
@@ -2046,7 +2137,7 @@ function escapeHtml(value) {
 }
 
 if ("serviceWorker" in navigator) {
-  navigator.serviceWorker.register("./service-worker.js?v=14").catch(() => {});
+  navigator.serviceWorker.register("./service-worker.js?v=15").catch(() => {});
 }
 
 render();

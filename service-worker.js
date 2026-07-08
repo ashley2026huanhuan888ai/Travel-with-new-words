@@ -1,12 +1,12 @@
-const CACHE_NAME = "travel-translation-memory-v14";
+const CACHE_NAME = "travel-translation-memory-v15";
 const ASSETS = [
   "./",
   "./index.html",
-  "./styles.css?v=14",
-  "./app.js?v=14",
-  "./storage.js?v=14",
-  "./ocr.js?v=14",
-  "./ai.js?v=14",
+  "./styles.css?v=15",
+  "./app.js?v=15",
+  "./storage.js?v=15",
+  "./ocr.js?v=15",
+  "./ai.js?v=15",
   "./manifest.webmanifest",
   "./favicon.svg"
 ];

@@ -10,6 +10,8 @@ const sample = {
     translation: "特制味噌拉面",
     literal: "特别制作的味噌拉面",
     language: "日文",
+    targetLanguage: "中文",
+    targetLanguageCode: "zh",
     scene: "餐厅点餐",
     tone: "中性",
     difficulty: "B1",
@@ -37,6 +39,7 @@ assert.equal(deepSeekRequest.stream, false);
 assert.ok(JSON.stringify(deepSeekRequest.messages).toLowerCase().includes("json"));
 assert.ok(JSON.stringify(deepSeekRequest.messages).includes("literal"));
 assert.ok(JSON.stringify(deepSeekRequest.messages).includes("mistake"));
+assert.ok(JSON.stringify(deepSeekRequest.messages).includes("targetLanguage"));
 
 await assert.rejects(() => createAiExplainResponse({}, { mode: "mock" }), /memory/iu);
 await assert.rejects(

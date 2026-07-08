@@ -32,6 +32,7 @@ export function buildMockExplanation(payload) {
   const original = clean(memory.original);
   const translation = clean(memory.translation);
   const language = clean(memory.language) || "外语";
+  const targetLanguage = clean(memory.targetLanguage) || "中文";
   const scene = clean(memory.scene) || inferScene(source.ocrText);
   const natural = translation || original;
   const literal = clean(memory.literal) || natural;
@@ -43,7 +44,7 @@ export function buildMockExplanation(payload) {
         natural,
         scene,
         tone: clean(memory.tone) || "中性",
-        example: buildExample(original, natural, language),
+        example: buildExample(original, natural, language, targetLanguage),
         similar: buildSimilar(memory, source),
         mistake: `不要只背中文“${natural}”，要连同${scene}、来源图片和当时场景一起记。`,
       },
@@ -100,7 +101,7 @@ export function normalizeExplanationResponse(data, payload, metadata = {}) {
     natural: clean(memory.translation) || clean(memory.original),
     scene: clean(memory.scene) || inferScene(source.ocrText),
     tone: clean(memory.tone) || "中性",
-    example: buildExample(memory.original, memory.translation, memory.language),
+    example: buildExample(memory.original, memory.translation, memory.language, memory.targetLanguage),
     similar: buildSimilar(memory, source),
     mistake: "结合来源场景一起记，避免脱离语境死记。",
   };
@@ -138,7 +139,7 @@ function buildMessages(payload) {
     {
       role: "system",
       content:
-        "你是面向中国出境旅行者的语言记忆教练。请只输出合法 JSON，不要输出 Markdown。JSON 必须包含 usage 和 sections；sections 必须包含 literal、natural、scene、tone、example、similar、mistake。如果中文译文为空、明显是占位，或用户是手动输入原文，请先给出自然中文译法。",
+        "你是面向中国出境旅行者的语言记忆教练。请只输出合法 JSON，不要输出 Markdown。JSON 必须包含 usage 和 sections；sections 必须包含 literal、natural、scene、tone、example、similar、mistake。如果译文为空、明显是占位，或用户是手动输入原文，请先按 payload.memory.targetLanguage 指定的目标语言给出自然译法；解释仍面向中文用户。",
     },
     {
       role: "user",
@@ -190,9 +191,9 @@ function inferScene(ocrText = "") {
   return "旅行场景";
 }
 
-function buildExample(original, translation, language) {
+function buildExample(original, translation, language, targetLanguage = "中文") {
   const left = clean(original) || clean(language) || "这个表达";
-  const right = clean(translation) || "对应的自然中文";
+  const right = clean(translation) || `对应的自然${clean(targetLanguage) || "中文"}`;
   return `${left} / ${right}`;
 }
 

@@ -16,7 +16,7 @@ Mobile WebApp prototype for Chinese travelers who use camera translation abroad 
 
 - First surface: mobile WebApp.
 - Real OCR path: Apple Vision through an iOS native wrapper.
-- Memory generation: only recommended key content becomes memory cards; all OCR text stays attached to source records.
+- Memory generation: all OCR text blocks become memory cards with weights; higher-weight items appear first in review.
 - Cloud subscription priorities: AI deep explanations and large source-image storage.
 - Privacy priorities: addresses, QR codes, chat avatars, and nicknames.
 
@@ -31,7 +31,7 @@ npm run dev
 Then open:
 
 ```text
-http://localhost:4174/index.html?v=14
+http://localhost:4174/index.html?v=15
 ```
 
 By default the AI endpoint uses a local mock and does not call any external model.

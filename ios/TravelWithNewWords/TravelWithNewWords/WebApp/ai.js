@@ -93,6 +93,8 @@ export function buildDomesticModelPayload(memory, context = {}) {
       translation: memory.translation || "",
       literal: memory.literal || "",
       language: memory.language || "",
+      targetLanguage: memory.targetLanguage || "中文",
+      targetLanguageCode: memory.targetLanguageCode || "",
       scene: memory.scene || "",
       tone: memory.tone || "",
       difficulty: memory.difficulty || "",
