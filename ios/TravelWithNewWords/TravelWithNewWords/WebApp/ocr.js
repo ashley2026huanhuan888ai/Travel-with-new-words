@@ -54,19 +54,19 @@ export const ocrProviderOptions = [
     id: "apple-vision",
     label: "Apple Vision OCR",
     mode: "ios-native-bridge",
-    description: "优先调用 iPhone 原生 Vision 文字识别；网页环境会自动兜底。",
+    description: "iOS 原生壳可调用 Apple Vision；普通网页不可用时会明确提示，不做假识别。",
   },
   {
     id: "browser-text-detector",
     label: "浏览器本机 OCR",
     mode: "offline-browser",
-    description: "优先尝试浏览器/系统本机文字识别，失败时自动用本机兜底。",
+    description: "仅在支持 TextDetector 的浏览器中可用；不可用时会保留图片等待重试。",
   },
   {
     id: "cloud-interface",
     label: "云端 OCR 接口",
     mode: "cloud-interface",
-    description: "先保留供应商接口；未开启云账户时不会上传图片。",
+    description: "需要配置真实 OCR 供应商；未开启云账户时不会上传图片。",
   },
   {
     id: "local-mock",
@@ -79,6 +79,7 @@ export const ocrProviderOptions = [
 export function createOcrAdapter(options = {}) {
   const provider = options.provider || "local-mock";
   const providerConfig = getOcrProvider(provider);
+  const allowMockFallback = options.allowMockFallback === true;
   return {
     provider,
     label: providerConfig.label,
@@ -87,22 +88,36 @@ export function createOcrAdapter(options = {}) {
     cloudEnabled: Boolean(options.cloudEnabled),
     async recognize(sourceImage) {
       if (provider === "apple-vision") {
-        return recognizeWithAppleVisionBridge(sourceImage).catch((error) =>
-          recognizeWithFallback(sourceImage, {
-            fallbackFrom: provider,
-            fallbackReason: error.message || "Apple Vision 桥接暂不可用，已使用本机兜底。",
-            nativeBridgeAttempted: true,
-          })
-        );
+        return recognizeWithAppleVisionBridge(sourceImage).catch((error) => {
+          if (allowMockFallback) {
+            return recognizeWithFallback(sourceImage, {
+              fallbackFrom: provider,
+              fallbackReason: error.message || "Apple Vision 桥接暂不可用，已使用模拟兜底。",
+              nativeBridgeAttempted: true,
+            });
+          }
+          throw createUnavailableError(
+            "Apple Vision OCR 当前不可用",
+            error,
+            "图片已保存。请在 iOS App 原生壳中使用 Apple Vision、配置云端 OCR，或先手动输入图片中的文字。"
+          );
+        });
       }
 
       if (provider === "browser-text-detector") {
-        return recognizeWithBrowserTextDetector(sourceImage).catch((error) =>
-          recognizeWithFallback(sourceImage, {
-            fallbackFrom: provider,
-            fallbackReason: error.message || "浏览器暂不支持本机 OCR，已使用模拟兜底。",
-          })
-        );
+        return recognizeWithBrowserTextDetector(sourceImage).catch((error) => {
+          if (allowMockFallback) {
+            return recognizeWithFallback(sourceImage, {
+              fallbackFrom: provider,
+              fallbackReason: error.message || "浏览器暂不支持本机 OCR，已使用模拟兜底。",
+            });
+          }
+          throw createUnavailableError(
+            "浏览器本机 OCR 当前不可用",
+            error,
+            "图片已保存。请换用支持 TextDetector 的浏览器、配置云端 OCR，或先手动输入图片中的文字。"
+          );
+        });
       }
 
       if (provider === "cloud-interface") {
@@ -180,24 +195,21 @@ async function recognizeWithBrowserTextDetector(sourceImage) {
 
 async function recognizeWithCloudInterface(sourceImage, options) {
   if (!options.cloudEnabled) {
-    return recognizeWithFallback(sourceImage, {
-      fallbackFrom: "cloud-interface",
-      fallbackReason: "云账户未开启，图片没有上传，已使用本机兜底。",
-      requiresCloudAccount: true,
-      cloudUploadAttempted: false,
-    });
+    throw createUnavailableError("云端 OCR 未开启", null, "图片已保存且没有上传。请开启云端 OCR，或先手动输入图片中的文字。");
   }
 
   if (typeof options.cloudRecognize !== "function") {
-    return recognizeWithFallback(sourceImage, {
-      fallbackFrom: "cloud-interface",
-      fallbackReason: "云端 OCR 供应商尚未配置，已使用本机兜底。",
-      requiresProviderConfig: true,
-      cloudUploadAttempted: false,
-    });
+    throw createUnavailableError("云端 OCR 供应商尚未配置", null, "图片已保存。请配置真实 OCR 接口后重试，或先手动输入图片中的文字。");
   }
 
   return options.cloudRecognize(sourceImage);
+}
+
+function createUnavailableError(title, error, action) {
+  const reason = error?.message ? `：${error.message}` : "";
+  const unavailableError = new Error(`${title}${reason}。${action}`);
+  unavailableError.code = "ocr-unavailable";
+  return unavailableError;
 }
 
 function recognizeWithFallback(sourceImage, meta = {}) {

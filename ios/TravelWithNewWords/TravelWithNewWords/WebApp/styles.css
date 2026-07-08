@@ -744,6 +744,12 @@ button:disabled {
   background: white;
 }
 
+.capture-tools button.error {
+  color: #fff4f4;
+  background: rgba(196, 57, 57, 0.42);
+  border-color: rgba(255, 190, 190, 0.5);
+}
+
 .capture-empty {
   margin: 14px 0 0;
   min-height: 360px;
@@ -813,6 +819,16 @@ button:disabled {
   border: 1px solid var(--line);
 }
 
+.source-policy.pending {
+  background: #f4f8fb;
+  border-color: #cfe1e8;
+}
+
+.source-policy.warning {
+  background: #fff7f1;
+  border-color: #f0c8aa;
+}
+
 .source-policy strong,
 .source-policy span {
   display: block;
@@ -821,6 +837,10 @@ button:disabled {
 .source-policy strong {
   color: var(--green-dark);
   font-size: 13px;
+}
+
+.source-policy.warning strong {
+  color: #a94f1f;
 }
 
 .source-policy span {

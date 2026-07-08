@@ -1,6 +1,6 @@
-import { storage } from "./storage.js?v=16";
-import { createAiExplanationAdapter, getAiProviderLabel } from "./ai.js?v=16";
-import { createOcrAdapter, getOcrProviderLabel, ocrProviderOptions } from "./ocr.js?v=16";
+import { storage } from "./storage.js?v=17";
+import { createAiExplanationAdapter, getAiProviderLabel } from "./ai.js?v=17";
+import { createOcrAdapter, getOcrProviderLabel, ocrProviderOptions } from "./ocr.js?v=17";
 
 const icons = {
   home: "M3 10.5 12 3l9 7.5V21a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z",
@@ -486,12 +486,35 @@ function homeScreen() {
 function captureScreen() {
   const selected = captureSuggestions[0];
   const sourceImage = state.lastSourceImageId ? state.sourceImages.find((item) => item.id === state.lastSourceImageId) : null;
-  const weightedBlocks = sourceImage?.weightedOcrBlocks || sourceImage?.recommendedKeyBlocks || [];
-  const detectedCount = sourceImage?.ocr?.blocks?.length || 3;
-  const savedCount = weightedBlocks.length || detectedCount;
-  const imageUrl = sourceImage ? state.imageUrls[sourceImage.id] : "";
-  const topBlock = weightedBlocks[0] || sourceImage?.ocr?.blocks?.[0] || null;
   const hasOcr = sourceImage?.ocrStatus === "done" || sourceImage?.ocr?.status === "done";
+  const ocrFailed = sourceImage?.ocrStatus === "failed";
+  const isProcessing = Boolean(sourceImage && !hasOcr && !ocrFailed);
+  const weightedBlocks = sourceImage?.weightedOcrBlocks || sourceImage?.recommendedKeyBlocks || [];
+  const detectedCount = hasOcr ? sourceImage?.ocr?.blocks?.length || 0 : 0;
+  const savedCount = hasOcr ? weightedBlocks.length || detectedCount : 0;
+  const imageUrl = sourceImage ? state.imageUrls[sourceImage.id] : "";
+  const topBlock = hasOcr ? weightedBlocks[0] || sourceImage?.ocr?.blocks?.[0] || null : null;
+  const policyTitle = sourceImage
+    ? hasOcr
+      ? `${savedCount} 条 OCR 文字已自动入库`
+      : ocrFailed
+        ? "图片已保存，文字识别未完成"
+        : "图片已保存，正在识别文字"
+    : "还没有选择照片";
+  const policyBody = sourceImage
+    ? hasOcr
+      ? "全部识别内容都会保存，系统按置信度、长度和层级分配权重，权重高的优先复习。"
+      : ocrFailed
+        ? sourceImage.lastOcrError || "当前环境没有可用 OCR 能力。图片已保存，可以重试或手动输入文字继续翻译。"
+        : "正在调用当前 OCR 管线；如果离线或服务不可用，会保留图片并显示原因。"
+    : "点击拍照后会直接进入识别，不需要再手动保存。";
+  const resultChips = sourceImage
+    ? hasOcr
+      ? ["OCR", "自动入库", "已识别"]
+      : ocrFailed
+        ? ["图片已保存", "待 OCR", "可手动输入"]
+        : ["OCR", "处理中", "离线队列"]
+    : ["拍照", "OCR", "记忆卡片"];
   return `
     ${topbar(
       `<button class="icon-button" data-tab="home" aria-label="关闭">${icon("back")}</button> 拍照 → 翻译`,
@@ -519,7 +542,7 @@ function captureScreen() {
             .join("")}
           <div class="capture-tools">
             <button class="active">自动识别</button>
-            <button>${hasOcr ? "已入库" : "识别中"}</button>
+            <button class="${ocrFailed ? "error" : ""}">${hasOcr ? "已入库" : ocrFailed ? "未识别" : "识别中"}</button>
           </div>
         </div>
       `
@@ -538,19 +561,22 @@ function captureScreen() {
           <span>${sourceImage ? "照片翻译结果" : "等待照片"}</span>
           <button class="link-button" data-action="open-camera">${sourceImage ? "重新拍照" : "打开相机"}</button>
         </div>
-        <div class="source-policy">
-          <strong>${sourceImage ? `${savedCount} 条 OCR 文字已自动入库` : "还没有选择照片"}</strong>
-          <span>${sourceImage ? "全部识别内容都会保存，系统按置信度、长度和层级分配权重，权重高的优先复习。" : "点击拍照后会直接进入识别，不需要再手动保存。"}</span>
+        <div class="source-policy ${ocrFailed ? "warning" : isProcessing ? "pending" : ""}">
+          <strong>${policyTitle}</strong>
+          <span>${escapeHtml(policyBody)}</span>
         </div>
         <div class="translation-result">
-          <small>${escapeHtml(topBlock?.text || selected.original)} ${icon("volume", "meta-icon")}</small>
-          <h2>${escapeHtml(topBlock?.translationHint || selected.translation)}</h2>
+          <small>${escapeHtml(topBlock?.text || (ocrFailed ? "等待文字内容" : selected.original))} ${icon("volume", "meta-icon")}</small>
+          <h2>${escapeHtml(topBlock?.translationHint || (ocrFailed ? "未完成识别" : selected.translation))}</h2>
           <p>${escapeHtml(sourceImage ? sourceOcrSummary({ sourceImageId: sourceImage.id }) : "请选择真实照片开始 OCR 翻译。")}</p>
-          <div class="chip-row">${(sourceImage ? ["OCR", "自动入库", hasOcr ? "已识别" : "处理中"] : ["拍照", "OCR", "记忆卡片"]).map((chip) => `<span class="chip">${chip}</span>`).join("")}</div>
+          <div class="chip-row">${resultChips.map((chip) => `<span class="chip">${chip}</span>`).join("")}</div>
         </div>
         <div class="capture-actions">
-          <button class="secondary-button" data-action="open-camera">${sourceImage ? "重新拍照" : "拍照"}</button>
-          <button class="primary-button" data-tab="library">${sourceImage ? "查看记忆" : "查看记忆库"}</button>
+          ${
+            sourceImage && !hasOcr
+              ? `<button class="secondary-button" data-action="manual-from-image">手动输入文字</button><button class="primary-button" data-action="retry-ocr">重试识别</button>`
+              : `<button class="secondary-button" data-action="open-camera">${sourceImage ? "重新拍照" : "拍照"}</button><button class="primary-button" data-tab="library">${sourceImage ? "查看记忆" : "查看记忆库"}</button>`
+          }
         </div>
       </div>
     </div>
@@ -1048,6 +1074,9 @@ function sourceOcrSummary(memory) {
     const savedCount = sourceImage.weightedOcrBlocks?.length || sourceImage.recommendedKeyBlocks?.length || ocr.blocks.length || 0;
     return ` OCR 已识别 ${ocr.blocks.length} 个文字块，自动入库 ${savedCount} 条并按权重排序，${fallback}${reason}`;
   }
+  if (sourceImage.ocrStatus === "failed") {
+    return sourceImage.lastOcrError || " OCR 还没有完成。图片已保存，可以重试或手动输入文字。";
+  }
   return " OCR 等待离线队列处理。";
 }
 
@@ -1530,6 +1559,17 @@ async function handleAction(action) {
     triggerPhotoInput();
     return;
   }
+  if (action === "retry-ocr") {
+    await retryCurrentOcr();
+    return;
+  }
+  if (action === "manual-from-image") {
+    state.activeTab = "manual";
+    state.manualInput = { text: "", previewReady: false, previewDraft: null, translating: false };
+    render();
+    toast("请把图片里的文字输入或粘贴到这里，会按当前语言设置翻译");
+    return;
+  }
   if (action === "process-queue") {
     await processOfflineQueue();
     return;
@@ -1577,6 +1617,31 @@ function triggerPhotoInput() {
   }
   input.value = "";
   input.click();
+}
+
+async function retryCurrentOcr() {
+  const sourceImage = getCurrentSourceImage();
+  if (!sourceImage) {
+    toast("没有可重试的来源图片");
+    return;
+  }
+  sourceImage.ocrStatus = "processing";
+  sourceImage.lastOcrError = "";
+  sourceImage.updatedAt = new Date().toISOString();
+  await saveAndReplaceSourceImage(sourceImage);
+  render();
+  toast("正在重新识别图片文字");
+  try {
+    const generatedMemoryCount = await recognizeAndStoreSourceImage(sourceImage);
+    await markOcrTaskDone(sourceImage.id);
+    state.queue = sortQueue(await storage.clearCompletedQueue());
+    render();
+    toast(`照片已识别，自动入库 ${generatedMemoryCount} 条文字`);
+  } catch (error) {
+    await markSourceImageOcrFailed(sourceImage, error);
+    render();
+    toast(readableErrorMessage(error, "OCR 识别失败，请重试"));
+  }
 }
 
 async function addCapturedMemory(action) {
@@ -1836,6 +1901,37 @@ function applyEnrichmentToDraft(draft, enrichment) {
   };
 }
 
+function getCurrentSourceImage() {
+  return state.lastSourceImageId ? state.sourceImages.find((item) => item.id === state.lastSourceImageId) : null;
+}
+
+async function saveAndReplaceSourceImage(sourceImage) {
+  await storage.saveSourceImage(sourceImage);
+  state.sourceImages = sortSourceImages(
+    state.sourceImages.some((item) => item.id === sourceImage.id)
+      ? state.sourceImages.map((item) => (item.id === sourceImage.id ? sourceImage : item))
+      : [sourceImage, ...state.sourceImages]
+  );
+}
+
+async function markSourceImageOcrFailed(sourceImage, error) {
+  sourceImage.ocrStatus = "failed";
+  sourceImage.lastOcrError = readableErrorMessage(error, "OCR 识别失败，请重试");
+  sourceImage.updatedAt = new Date().toISOString();
+  await saveAndReplaceSourceImage(sourceImage);
+}
+
+async function markOcrTaskDone(sourceImageId) {
+  const task = state.queue.find((item) => item.type === "ocr-source-image" && item.sourceImageId === sourceImageId);
+  if (!task) return;
+  await storage.updateTask({ ...task, status: "done", completedAt: new Date().toISOString(), lastError: "" });
+}
+
+function readableErrorMessage(error, fallback) {
+  if (error instanceof Error && error.message) return error.message;
+  return fallback;
+}
+
 async function storeImportedImage(file) {
   const now = new Date().toISOString();
   const sourceImage = {
@@ -1849,6 +1945,8 @@ async function storeImportedImage(file) {
     privacyBlur: state.settings.privacyBlur,
     locationMode: state.settings.location ? "city-auto" : "manual-optional",
     displayName: file.name || "相机照片",
+    ocrStatus: "processing",
+    lastOcrError: "",
   };
 
   await storage.saveSourceImage(sourceImage);
@@ -1869,15 +1967,16 @@ async function storeImportedImage(file) {
   toast(`已保存来源图片：${sourceImage.displayName}，正在识别文字`);
   try {
     const generatedMemoryCount = await recognizeAndStoreSourceImage(sourceImage);
-    await storage.updateTask({ ...task, status: "done", completedAt: new Date().toISOString() });
+    await storage.updateTask({ ...task, status: "done", completedAt: new Date().toISOString(), lastError: "" });
     state.queue = sortQueue(await storage.clearCompletedQueue());
     render();
     toast(`照片已识别，自动入库 ${generatedMemoryCount} 条文字`);
   } catch (error) {
-    await storage.updateTask({ ...task, status: "pending", lastError: error instanceof Error ? error.message : "OCR failed" });
+    await markSourceImageOcrFailed(sourceImage, error);
+    await storage.updateTask({ ...task, status: "pending", lastError: readableErrorMessage(error, "OCR failed") });
     state.queue = sortQueue(await storage.clearCompletedQueue());
     render();
-    toast(error instanceof Error ? error.message : "OCR 识别失败，请重试");
+    toast(readableErrorMessage(error, "OCR 识别失败，请重试"));
   }
 }
 
@@ -1925,11 +2024,22 @@ async function processOfflineQueue() {
   let blockedByApiKey = false;
   let processedCount = 0;
   let generatedMemoryCount = 0;
+  let failedOcrCount = 0;
   for (const task of pendingTasks) {
       if (task.type === "ocr-source-image") {
         const sourceImage = state.sourceImages.find((item) => item.id === task.sourceImageId) || (await storage.getSourceImage(task.sourceImageId));
         if (sourceImage) {
-          generatedMemoryCount += await recognizeAndStoreSourceImage(sourceImage);
+          sourceImage.ocrStatus = "processing";
+          sourceImage.lastOcrError = "";
+          await saveAndReplaceSourceImage(sourceImage);
+          try {
+            generatedMemoryCount += await recognizeAndStoreSourceImage(sourceImage);
+          } catch (error) {
+            failedOcrCount += 1;
+            await markSourceImageOcrFailed(sourceImage, error);
+            await storage.updateTask({ ...task, status: "pending", lastError: readableErrorMessage(error, "OCR failed") });
+            continue;
+          }
         }
       }
 
@@ -1970,6 +2080,10 @@ async function processOfflineQueue() {
     return;
   }
   const generatedText = generatedMemoryCount ? `，自动入库 ${generatedMemoryCount} 条 OCR 内容并按权重排序` : "";
+  if (failedOcrCount) {
+    toast(processedCount ? `已处理 ${processedCount} 项${generatedText}，${failedOcrCount} 张图片还不能识别` : `${failedOcrCount} 张图片还不能识别，请在图片页查看原因或手动输入`);
+    return;
+  }
   toast(`已处理 ${processedCount} 项：OCR 识别和 AI 整理状态已更新${generatedText}`);
 }
 
@@ -1979,9 +2093,9 @@ async function recognizeAndStoreSourceImage(sourceImage) {
   sourceImage.weightedOcrBlocks = rankOcrBlocks(ocr.blocks);
   sourceImage.recommendedKeyBlocks = sourceImage.weightedOcrBlocks;
   sourceImage.ocrStatus = "done";
+  sourceImage.lastOcrError = "";
   sourceImage.updatedAt = new Date().toISOString();
-  await storage.saveSourceImage(sourceImage);
-  state.sourceImages = sortSourceImages(state.sourceImages.map((item) => (item.id === sourceImage.id ? sourceImage : item)));
+  await saveAndReplaceSourceImage(sourceImage);
   return createMemoriesFromOcrSource(sourceImage);
 }
 
@@ -2282,7 +2396,7 @@ function escapeHtml(value) {
 }
 
 if ("serviceWorker" in navigator) {
-  navigator.serviceWorker.register("./service-worker.js?v=16").catch(() => {});
+  navigator.serviceWorker.register("./service-worker.js?v=17").catch(() => {});
 }
 
 render();
