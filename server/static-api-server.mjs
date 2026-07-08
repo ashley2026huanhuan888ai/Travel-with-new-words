@@ -54,7 +54,7 @@ export function startDevServer(options = {}) {
   const host = options.host || process.env.HOST || "127.0.0.1";
   const server = createServer(createRequestListener(options));
   server.listen(port, host, () => {
-    console.log(`Travel with New Words dev server: http://${host}:${port}/index.html?v=15`);
+    console.log(`Travel with New Words dev server: http://${host}:${port}/index.html?v=16`);
     console.log(`AI explain mode: ${process.env.AI_EXPLAIN_MODE || "mock"} / provider: deepseek`);
   });
   return server;

@@ -1,6 +1,6 @@
-import { storage } from "./storage.js?v=15";
-import { createAiExplanationAdapter, getAiProviderLabel } from "./ai.js?v=15";
-import { createOcrAdapter, getOcrProviderLabel, ocrProviderOptions } from "./ocr.js?v=15";
+import { storage } from "./storage.js?v=16";
+import { createAiExplanationAdapter, getAiProviderLabel } from "./ai.js?v=16";
+import { createOcrAdapter, getOcrProviderLabel, ocrProviderOptions } from "./ocr.js?v=16";
 
 const icons = {
   home: "M3 10.5 12 3l9 7.5V21a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z",
@@ -253,6 +253,8 @@ const defaultState = {
   manualInput: {
     text: "",
     previewReady: false,
+    previewDraft: null,
+    translating: false,
   },
   toast: "",
   storageReady: false,
@@ -370,7 +372,7 @@ function nav() {
             (id === "library" && state.activeTab === "detail") ||
             (id === "capture" && state.activeTab === "manual");
           return `
-            <button class="nav-item ${active ? "active" : ""} ${special || ""}" data-tab="${id}">
+            <button class="nav-item ${active ? "active" : ""} ${special || ""}" ${id === "capture" ? 'data-action="open-camera"' : `data-tab="${id}"`}>
               <span class="tab-icon-wrap">${icon(iconName, "tab-icon")}</span>
               <span>${label}</span>
             </button>
@@ -396,6 +398,7 @@ function render() {
   app.innerHTML = `
     <section class="screen">
       ${statusBar()}
+      <input id="photoInput" class="file-input" type="file" accept="image/*" capture="environment" />
       ${screen}
       ${nav()}
       ${state.exportOptions.open ? exportSheet() : ""}
@@ -416,7 +419,7 @@ function homeScreen() {
       "borderless"
     )}
     <div class="content">
-      <button class="hero-action" data-tab="capture">
+      <button class="hero-action" data-action="open-camera">
         <span class="camera-mark">${icon("camera")}</span>
         <span><strong>拍照翻译</strong><span>识别菜单 / 路牌 / 说明书等</span></span>
       </button>
@@ -486,44 +489,68 @@ function captureScreen() {
   const weightedBlocks = sourceImage?.weightedOcrBlocks || sourceImage?.recommendedKeyBlocks || [];
   const detectedCount = sourceImage?.ocr?.blocks?.length || 3;
   const savedCount = weightedBlocks.length || detectedCount;
+  const imageUrl = sourceImage ? state.imageUrls[sourceImage.id] : "";
+  const topBlock = weightedBlocks[0] || sourceImage?.ocr?.blocks?.[0] || null;
+  const hasOcr = sourceImage?.ocrStatus === "done" || sourceImage?.ocr?.status === "done";
   return `
     ${topbar(
-      `<button class="icon-button" data-tab="home" aria-label="关闭">${icon("back")}</button> 日文 → 中文`,
+      `<button class="icon-button" data-tab="home" aria-label="关闭">${icon("back")}</button> 拍照 → 翻译`,
       "",
-      `<button class="icon-button" data-tab="manual" aria-label="输入文字">${icon("edit")}</button><label class="icon-button" for="photoInput" aria-label="导入图片">${icon("image")}</label>`,
+      `<button class="icon-button" data-tab="manual" aria-label="输入文字">${icon("edit")}</button><button class="icon-button" data-action="open-camera" aria-label="拍照或导入图片">${icon("image")}</button>`,
       ""
     )}
-    <input id="photoInput" class="file-input" type="file" accept="image/*" capture="environment" />
     <div class="content">
-      <div class="capture-stage">
-        <div class="photo-frame" aria-label="菜单照片预览"></div>
-        <div class="scan-card selected one"><h3>${selected.original}</h3><p>¥1,280<br />濃厚な味噌スープにチャーシュー、味玉、メンマ入り</p><span class="scan-check">${icon("check")}</span></div>
-        <div class="scan-card two"><h3>辛味噌ラーメン</h3><p>¥1,180<br />ピリ辛の味噌スープが癖になる一杯</p><span class="scan-check"></span></div>
-        <div class="scan-card three"><h3>餃子（6個）</h3><p>¥480<br />外はパリッと、中はジューシー</p><span class="scan-check"></span></div>
-        <div class="capture-tools">
-          <button class="active">划线选择</button>
-          <button>框选区域</button>
+      ${
+        sourceImage
+          ? `
+        <div class="capture-stage">
+          <div class="photo-frame imported" aria-label="来源照片预览">${imageUrl ? `<img class="capture-photo" src="${imageUrl}" alt="来源照片" />` : ""}</div>
+          ${weightedBlocks
+            .slice(0, 3)
+            .map(
+              (block, index) => `
+            <div class="scan-card selected imported-card imported-${index + 1}">
+              <h3>${escapeHtml(clipText(block.text, 28))}</h3>
+              <p>${escapeHtml(block.translationHint || `权重 ${block.memoryWeight || memoryWeightForBlock(block)}`)}</p>
+              <span class="scan-check">${icon("check")}</span>
+            </div>
+          `
+            )
+            .join("")}
+          <div class="capture-tools">
+            <button class="active">自动识别</button>
+            <button>${hasOcr ? "已入库" : "识别中"}</button>
+          </div>
         </div>
-      </div>
+      `
+          : `
+        <div class="capture-empty">
+          <span class="camera-mark">${icon("camera")}</span>
+          <h2>拍照或选择图片后开始翻译</h2>
+          <p>会保存来源图片，自动 OCR，识别到的文字会立刻生成记忆卡片。</p>
+          <button class="primary-button wide-button" data-action="open-camera">拍照 / 选择照片</button>
+        </div>
+      `
+      }
 
       <div class="ai-sheet">
         <div class="ai-sheet-head">
-          <span>自动入库内容</span>
-          <button class="link-button" data-action="accept-all">全部入库</button>
+          <span>${sourceImage ? "照片翻译结果" : "等待照片"}</span>
+          <button class="link-button" data-action="open-camera">${sourceImage ? "重新拍照" : "打开相机"}</button>
         </div>
         <div class="source-policy">
-          <strong>${savedCount} 条 OCR 文字会生成记忆</strong>
-          <span>全部识别内容都会保存，系统按置信度、长度和层级分配权重，权重高的优先复习。</span>
+          <strong>${sourceImage ? `${savedCount} 条 OCR 文字已自动入库` : "还没有选择照片"}</strong>
+          <span>${sourceImage ? "全部识别内容都会保存，系统按置信度、长度和层级分配权重，权重高的优先复习。" : "点击拍照后会直接进入识别，不需要再手动保存。"}</span>
         </div>
         <div class="translation-result">
-          <small>${selected.original} ${icon("volume", "meta-icon")}</small>
-          <h2>${selected.translation}</h2>
-          <p>${selected.detail}</p>
-          <div class="chip-row">${selected.chips.map((chip) => `<span class="chip">${chip}</span>`).join("")}</div>
+          <small>${escapeHtml(topBlock?.text || selected.original)} ${icon("volume", "meta-icon")}</small>
+          <h2>${escapeHtml(topBlock?.translationHint || selected.translation)}</h2>
+          <p>${escapeHtml(sourceImage ? sourceOcrSummary({ sourceImageId: sourceImage.id }) : "请选择真实照片开始 OCR 翻译。")}</p>
+          <div class="chip-row">${(sourceImage ? ["OCR", "自动入库", hasOcr ? "已识别" : "处理中"] : ["拍照", "OCR", "记忆卡片"]).map((chip) => `<span class="chip">${chip}</span>`).join("")}</div>
         </div>
         <div class="capture-actions">
-          <button class="secondary-button" data-action="preview-save">预览后入库</button>
-          <button class="primary-button" data-action="save-capture">保存重点</button>
+          <button class="secondary-button" data-action="open-camera">${sourceImage ? "重新拍照" : "拍照"}</button>
+          <button class="primary-button" data-tab="library">${sourceImage ? "查看记忆" : "查看记忆库"}</button>
         </div>
       </div>
     </div>
@@ -535,7 +562,7 @@ function manualScreen() {
   const normalizedText = normalizeManualText(text);
   const blocks = splitManualText(normalizedText);
   const previewReady = state.manualInput.previewReady && normalizedText;
-  const preview = previewReady ? buildManualMemoryDraft(normalizedText, blocks) : null;
+  const preview = previewReady ? state.manualInput.previewDraft || buildManualMemoryDraft(normalizedText, blocks) : null;
   const inputLanguage = getManualLanguageOption("source", state.settings.manualSourceLanguage);
   const outputLanguage = getManualLanguageOption("target", state.settings.manualTargetLanguage);
   const language = getManualInputLanguageLabel();
@@ -572,8 +599,8 @@ function manualScreen() {
         </div>
 
         <div class="source-policy manual-policy">
-          <strong>${previewReady ? "保存前预览已生成" : normalizedText ? "先生成保存前预览" : "输入后先预览再入库"}</strong>
-          <span>${normalizedText ? `${levelSummary}。确认后会保存为同一条主记忆，DeepSeek 整理等你点“补整理”时再处理。` : "支持单词、短语、句子和段落。第一步只预览，不写入记忆库。"}</span>
+          <strong>${previewReady ? "译文已生成，可以保存" : normalizedText ? "点击翻译，先生成译文" : "选择语言后输入文字"}</strong>
+          <span>${normalizedText ? `${levelSummary}。未知内容会先调用 DeepSeek 翻译；没有 Key 时会直接弹出填写界面。` : "支持单词、短语、句子和段落。翻译成功后再保存到记忆库。"}</span>
         </div>
 
         ${
@@ -591,7 +618,7 @@ function manualScreen() {
 
         <div class="capture-actions">
           <button class="secondary-button" type="button" data-action="${previewReady ? "edit-manual" : "clear-manual"}">${previewReady ? "返回修改" : "清空"}</button>
-          <button class="primary-button" type="submit">${previewReady ? "确认保存" : "生成预览"}</button>
+          <button class="primary-button" type="submit" ${state.manualInput.translating ? "disabled" : ""}>${state.manualInput.translating ? "翻译中..." : previewReady ? "保存到记忆库" : "翻译"}</button>
         </div>
       </form>
 
@@ -1200,6 +1227,7 @@ function buildManualMemoryDraft(text, blocks = splitManualText(text)) {
     similar: similar.length ? similar : [level, scene],
     mistake: translation.known ? "不要只背中文，要连同出现的场景一起记。" : "长句和段落不要只逐词硬背，先理解整句语气和使用场景。",
     contentBlocks: blocks,
+    translationPending: !translation.known,
   };
 }
 
@@ -1387,6 +1415,7 @@ function bindEvents(root) {
   root.querySelector("[data-manual-text]")?.addEventListener("input", (event) => {
     state.manualInput.text = event.target.value;
     state.manualInput.previewReady = false;
+    state.manualInput.previewDraft = null;
   });
 
   root.querySelector("[data-manual-form]")?.addEventListener("submit", async (event) => {
@@ -1394,7 +1423,7 @@ function bindEvents(root) {
     if (state.manualInput.previewReady) {
       await addManualMemory();
     } else {
-      previewManualMemory();
+      await previewManualMemory();
     }
   });
 
@@ -1402,6 +1431,7 @@ function bindEvents(root) {
     button.addEventListener("click", () => {
       state.manualInput.text = button.dataset.manualSample || "";
       state.manualInput.previewReady = false;
+      state.manualInput.previewDraft = null;
       render();
     });
   });
@@ -1416,6 +1446,7 @@ function bindEvents(root) {
         state.settings.manualTargetLanguage = value;
       }
       state.manualInput.previewReady = false;
+      state.manualInput.previewDraft = null;
       await storage.saveSettings(state.settings);
       render();
       toast(`${kind === "source" ? "输入语言" : "输出语言"}已设为：${button.querySelector("strong").textContent}`);
@@ -1485,13 +1516,18 @@ async function handleAction(action) {
     return;
   }
   if (action === "clear-manual") {
-    state.manualInput = { text: "", previewReady: false };
+    state.manualInput = { text: "", previewReady: false, previewDraft: null, translating: false };
     render();
     return;
   }
   if (action === "edit-manual") {
     state.manualInput.previewReady = false;
+    state.manualInput.previewDraft = null;
     render();
+    return;
+  }
+  if (action === "open-camera") {
+    triggerPhotoInput();
     return;
   }
   if (action === "process-queue") {
@@ -1531,6 +1567,16 @@ async function handleAction(action) {
     state.reviewRevealed = true;
     render();
   }
+}
+
+function triggerPhotoInput() {
+  const input = document.querySelector("#photoInput");
+  if (!input) {
+    toast("相机入口暂不可用，请刷新页面后重试");
+    return;
+  }
+  input.value = "";
+  input.click();
 }
 
 async function addCapturedMemory(action) {
@@ -1613,16 +1659,40 @@ async function addCapturedMemory(action) {
   toast(`${label}，已进入离线队列，联网后补充 AI 整理`);
 }
 
-function previewManualMemory() {
+async function previewManualMemory() {
   const text = normalizeManualText(state.manualInput.text);
   if (!text) {
     toast("请先输入要翻译的文字");
     return;
   }
+  const blocks = splitManualText(text);
+  let draft = buildManualMemoryDraft(text, blocks);
+  if (draft.translationPending) {
+    if (state.settings.aiProvider === "domestic-model-service" && !state.runtimeAiKey) {
+      state.manualInput.text = text;
+      state.manualInput.previewReady = false;
+      state.manualInput.previewDraft = null;
+      openApiKeyDialog("输入文字需要先翻译。填写 DeepSeek API Key 后，会直接生成译文预览；Key 只保存在本次页面会话。", "translate-manual");
+      return;
+    }
+
+    state.manualInput = { ...state.manualInput, text, translating: true, previewReady: false, previewDraft: null };
+    render();
+    try {
+      draft = await enrichManualDraft(draft, text, blocks);
+    } catch (error) {
+      state.manualInput = { ...state.manualInput, translating: false, previewReady: false, previewDraft: null };
+      render();
+      toast(error instanceof Error ? error.message : "翻译失败，请稍后重试");
+      return;
+    }
+  }
   state.manualInput.text = text;
+  state.manualInput.previewDraft = draft;
   state.manualInput.previewReady = true;
+  state.manualInput.translating = false;
   render();
-  toast("已生成保存前预览，确认后再入库");
+  toast("已生成译文预览，确认后保存到记忆库");
 }
 
 async function addManualMemory() {
@@ -1637,7 +1707,11 @@ async function addManualMemory() {
   }
 
   const blocks = splitManualText(text);
-  const draft = buildManualMemoryDraft(text, blocks);
+  const draft = state.manualInput.previewDraft?.original === text ? state.manualInput.previewDraft : buildManualMemoryDraft(text, blocks);
+  if (draft.translationPending) {
+    await previewManualMemory();
+    return;
+  }
   const now = new Date().toISOString();
   const location = state.settings.location ? "当前旅行城市" : "可手动填写";
   const existing = state.memories.find((item) => normalizeManualText(item.original).toLocaleLowerCase() === text.toLocaleLowerCase());
@@ -1705,10 +1779,61 @@ async function addManualMemory() {
   });
   state.queue = sortQueue([task, ...state.queue]);
   state.memories = sortMemories(state.memories);
-  state.manualInput = { text: "", previewReady: false };
+  state.manualInput = { text: "", previewReady: false, previewDraft: null, translating: false };
   state.activeTab = "manual";
   state.detailId = null;
-  toast("已保存到记忆库。点“补整理”时再填写 DeepSeek Key 并生成深度解释");
+  toast("已保存到记忆库，并加入复习与深度解释队列");
+}
+
+async function enrichManualDraft(draft, text, blocks) {
+  const enrichment = await getAiAdapter().enrichMemory(
+    {
+      ...draft,
+      sourceKind: "manual-text",
+      fullText: text,
+      pending: true,
+    },
+    {
+      inputMode: "manual-text",
+      manualText: text,
+      contentBlocks: blocks,
+    }
+  );
+  if (enrichment.status === "api-key-required") {
+    openApiKeyDialog("需要 DeepSeek API Key 才能翻译这段文字。保存后会继续生成译文预览。", "translate-manual");
+    throw new Error("需要填写 DeepSeek API Key 才能翻译");
+  }
+  if (enrichment.status === "provider-error") {
+    throw new Error(enrichment.error || "DeepSeek 翻译失败");
+  }
+  return applyEnrichmentToDraft(draft, enrichment);
+}
+
+function applyEnrichmentToDraft(draft, enrichment) {
+  const sections = enrichment.sections || {};
+  return {
+    ...draft,
+    translation: sections.natural || draft.translation,
+    literal: sections.literal || draft.literal,
+    scene: sections.scene || draft.scene,
+    topic: sections.scene ? manualTopicForScene(sections.scene, draft.topic) : draft.topic,
+    tone: sections.tone || draft.tone,
+    usage: enrichment.usage || draft.usage,
+    example: sections.example || draft.example,
+    similar: Array.isArray(sections.similar) && sections.similar.length ? sections.similar : draft.similar,
+    mistake: sections.mistake || draft.mistake,
+    pending: false,
+    translationPending: false,
+    aiStatus: enrichment.status,
+    aiExplanation: sections,
+    aiProvider: enrichment.provider,
+    aiProviderLabel: getAiProviderLabel(enrichment.provider),
+    aiModelProvider: enrichment.modelProvider || "",
+    aiModel: enrichment.model || "",
+    aiServerMode: enrichment.serverMode || "",
+    aiResponseId: enrichment.providerResponseId || "",
+    enrichedAt: enrichment.enrichedAt,
+  };
 }
 
 async function storeImportedImage(file) {
@@ -1739,7 +1864,21 @@ async function storeImportedImage(file) {
   state.sourceImages = sortSourceImages([sourceImage, ...state.sourceImages]);
   state.imageUrls[sourceImage.id] = URL.createObjectURL(file);
   state.queue = sortQueue([task, ...state.queue]);
-  toast(`已保存来源图片：${sourceImage.displayName}，并加入 OCR 离线队列`);
+  state.activeTab = "capture";
+  render();
+  toast(`已保存来源图片：${sourceImage.displayName}，正在识别文字`);
+  try {
+    const generatedMemoryCount = await recognizeAndStoreSourceImage(sourceImage);
+    await storage.updateTask({ ...task, status: "done", completedAt: new Date().toISOString() });
+    state.queue = sortQueue(await storage.clearCompletedQueue());
+    render();
+    toast(`照片已识别，自动入库 ${generatedMemoryCount} 条文字`);
+  } catch (error) {
+    await storage.updateTask({ ...task, status: "pending", lastError: error instanceof Error ? error.message : "OCR failed" });
+    state.queue = sortQueue(await storage.clearCompletedQueue());
+    render();
+    toast(error instanceof Error ? error.message : "OCR 识别失败，请重试");
+  }
 }
 
 async function updateStatus(id, status) {
@@ -1790,15 +1929,7 @@ async function processOfflineQueue() {
       if (task.type === "ocr-source-image") {
         const sourceImage = state.sourceImages.find((item) => item.id === task.sourceImageId) || (await storage.getSourceImage(task.sourceImageId));
         if (sourceImage) {
-          const ocr = await getOcrAdapter().recognize(sourceImage);
-          sourceImage.ocr = ocr;
-          sourceImage.weightedOcrBlocks = rankOcrBlocks(ocr.blocks);
-          sourceImage.recommendedKeyBlocks = sourceImage.weightedOcrBlocks;
-          sourceImage.ocrStatus = "done";
-          sourceImage.updatedAt = new Date().toISOString();
-          await storage.saveSourceImage(sourceImage);
-          state.sourceImages = sortSourceImages(state.sourceImages.map((item) => (item.id === sourceImage.id ? sourceImage : item)));
-          generatedMemoryCount += await createMemoriesFromOcrSource(sourceImage);
+          generatedMemoryCount += await recognizeAndStoreSourceImage(sourceImage);
         }
       }
 
@@ -1840,6 +1971,18 @@ async function processOfflineQueue() {
   }
   const generatedText = generatedMemoryCount ? `，自动入库 ${generatedMemoryCount} 条 OCR 内容并按权重排序` : "";
   toast(`已处理 ${processedCount} 项：OCR 识别和 AI 整理状态已更新${generatedText}`);
+}
+
+async function recognizeAndStoreSourceImage(sourceImage) {
+  const ocr = await getOcrAdapter().recognize(sourceImage);
+  sourceImage.ocr = ocr;
+  sourceImage.weightedOcrBlocks = rankOcrBlocks(ocr.blocks);
+  sourceImage.recommendedKeyBlocks = sourceImage.weightedOcrBlocks;
+  sourceImage.ocrStatus = "done";
+  sourceImage.updatedAt = new Date().toISOString();
+  await storage.saveSourceImage(sourceImage);
+  state.sourceImages = sortSourceImages(state.sourceImages.map((item) => (item.id === sourceImage.id ? sourceImage : item)));
+  return createMemoriesFromOcrSource(sourceImage);
 }
 
 async function createMemoriesFromOcrSource(sourceImage) {
@@ -2009,6 +2152,8 @@ async function saveRuntimeApiKey() {
     toast(`DeepSeek API Key 已保存在本次页面会话，当前模式：${result.aiExplainMode}`);
     if (pendingAction === "process-queue") {
       await processOfflineQueue();
+    } else if (pendingAction === "translate-manual") {
+      await previewManualMemory();
     }
   } catch (error) {
     toast(error instanceof Error ? error.message : "API Key 保存失败");
@@ -2137,7 +2282,7 @@ function escapeHtml(value) {
 }
 
 if ("serviceWorker" in navigator) {
-  navigator.serviceWorker.register("./service-worker.js?v=15").catch(() => {});
+  navigator.serviceWorker.register("./service-worker.js?v=16").catch(() => {});
 }
 
 render();
