@@ -1463,6 +1463,63 @@ button:disabled {
   text-align: center;
 }
 
+.ai-status-card {
+  margin: 12px 0;
+  padding: 12px;
+  border-radius: var(--radius);
+  border: 1px solid var(--line);
+  background: #f7faf9;
+}
+
+.ai-status-card.ready {
+  background: var(--green-soft);
+  border-color: rgba(42, 132, 83, 0.28);
+}
+
+.ai-status-card.pending {
+  background: #f4f8fb;
+  border-color: #cfe1e8;
+}
+
+.ai-status-card.warning {
+  background: #fff7f1;
+  border-color: #f0c8aa;
+}
+
+.ai-status-card strong,
+.ai-status-card span,
+.ai-status-card small {
+  display: block;
+}
+
+.ai-status-card strong {
+  color: var(--green-dark);
+  font-size: 13px;
+}
+
+.ai-status-card.warning strong {
+  color: #a94f1f;
+}
+
+.ai-status-card span {
+  margin-top: 5px;
+  color: #4d5d55;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.ai-status-card small {
+  margin-top: 8px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.split-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
 .provider-grid {
   margin-top: 12px;
   display: grid;

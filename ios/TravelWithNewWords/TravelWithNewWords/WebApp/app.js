@@ -1,6 +1,6 @@
-import { storage } from "./storage.js?v=17";
-import { createAiExplanationAdapter, getAiProviderLabel } from "./ai.js?v=17";
-import { createOcrAdapter, getOcrProviderLabel, ocrProviderOptions } from "./ocr.js?v=17";
+import { storage } from "./storage.js?v=18";
+import { createAiExplanationAdapter, getAiProviderLabel } from "./ai.js?v=18";
+import { createOcrAdapter, getOcrProviderLabel, ocrProviderOptions } from "./ocr.js?v=18";
 
 const icons = {
   home: "M3 10.5 12 3l9 7.5V21a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z",
@@ -280,6 +280,13 @@ const defaultState = {
   imageUrls: {},
   exportOptions: structuredClone(defaultExportOptions),
   runtimeAiKey: "",
+  aiConnection: {
+    status: "unknown",
+    message: "",
+    checkedAt: "",
+    keySource: "",
+    model: "",
+  },
   apiKeyDialog: {
     open: false,
     apiKey: "",
@@ -828,9 +835,69 @@ function reviewScreen() {
   `;
 }
 
+function aiStatusSummary() {
+  const checkedAt = state.aiConnection.checkedAt ? `上次检测：${formatShortDate(state.aiConnection.checkedAt)}` : "";
+  if (state.aiConnection.status === "checking") {
+    return {
+      tone: "pending",
+      title: "正在检测 AI 配置",
+      body: "正在读取后端配置；如果本次页面已有 Key，会由你点击检测时发起一次同源测试请求。",
+      meta: checkedAt,
+    };
+  }
+  if (state.runtimeAiKey) {
+    const verified = state.aiConnection.status === "verified";
+    return {
+      tone: verified ? "ready" : "pending",
+      title: verified ? "本次手机页面 Key 已验证" : "本次手机页面已填写 DeepSeek Key",
+      body: verified
+        ? state.aiConnection.message || "已通过同源 /api/ai/explain 返回真实 AI 响应。"
+        : "Key 只保存在当前页面内存里；刷新、关闭页面或重新部署后需要重新填写。可点击检测确认接口是否可用。",
+      meta: [state.aiConnection.model ? `模型：${state.aiConnection.model}` : "", checkedAt].filter(Boolean).join(" · "),
+    };
+  }
+  if (state.aiConnection.status === "server-key") {
+    return {
+      tone: "ready",
+      title: "后端环境已配置 DeepSeek Key",
+      body: state.aiConnection.message || "这台手机当前页面没有单独填写 Key，但同源后端已有环境 Key。",
+      meta: [state.aiConnection.model ? `模型：${state.aiConnection.model}` : "", checkedAt].filter(Boolean).join(" · "),
+    };
+  }
+  if (state.aiConnection.status === "missing-key") {
+    return {
+      tone: "warning",
+      title: "当前页面没有 DeepSeek Key",
+      body: state.aiConnection.message || "本次手机页面没有 Key，后端环境也未显示已配置；需要填写后才能做真实 AI 深度解释。",
+      meta: checkedAt,
+    };
+  }
+  if (state.aiConnection.status === "error") {
+    return {
+      tone: "warning",
+      title: "AI 配置检测失败",
+      body: state.aiConnection.message || "没有拿到可确认的 AI 状态。",
+      meta: checkedAt,
+    };
+  }
+  return {
+    tone: state.settings.aiNetworkEnabled ? "pending" : "neutral",
+    title: state.settings.aiNetworkEnabled ? "联网 AI 已开启，等待确认 Key 状态" : "联网 AI 未开启",
+    body: state.settings.aiNetworkEnabled
+      ? "如果你已经在这台手机页面填过 Key，这里会显示为已填写；否则请点击检测或重新填写。"
+      : "当前使用本地/接口兜底；要用 DeepSeek 深度解释，需要填写 Key 或配置后端环境 Key。",
+    meta: "",
+  };
+}
+
+function hasAiKeyAvailable() {
+  return Boolean(state.runtimeAiKey || state.aiConnection.status === "server-key");
+}
+
 function settingsScreen() {
   const ocrAdapter = getOcrAdapter();
   const aiAdapter = getAiAdapter();
+  const aiStatus = aiStatusSummary();
   return `
     ${topbar("我的", "本地免费使用，云账户通过订阅扩容")}
     <div class="content">
@@ -857,8 +924,16 @@ function settingsScreen() {
       </div>
       <div class="panel provider-panel">
         <p class="panel-title">AI 中文解释</p>
-        <p class="subtitle">当前：${aiAdapter.label} · ${aiAdapter.mode}。默认本地 mock；填写 Key 后从手机会话调用 DeepSeek。</p>
-        <button class="secondary-button wide-button" data-action="open-api-key">填写 DeepSeek API Key</button>
+        <p class="subtitle">当前：${aiAdapter.label} · ${aiAdapter.mode}。Key 状态以这台手机当前页面会话为准。</p>
+        <div class="ai-status-card ${aiStatus.tone}">
+          <strong>${escapeHtml(aiStatus.title)}</strong>
+          <span>${escapeHtml(aiStatus.body)}</span>
+          ${aiStatus.meta ? `<small>${escapeHtml(aiStatus.meta)}</small>` : ""}
+        </div>
+        <div class="split-actions">
+          <button class="secondary-button" data-action="open-api-key">${state.runtimeAiKey ? "更新 DeepSeek API Key" : "填写 DeepSeek API Key"}</button>
+          <button class="primary-button" data-action="test-ai-connection">检测 AI 配置</button>
+        </div>
       </div>
       <div class="panel provider-panel">
         <p class="panel-title">云账户订阅版</p>
@@ -1599,6 +1674,10 @@ async function handleAction(action) {
     closeApiKeyDialog();
     return;
   }
+  if (action === "test-ai-connection") {
+    await testAiConnection();
+    return;
+  }
   if (action === "run-export") {
     runSelectedExport();
     return;
@@ -1733,7 +1812,7 @@ async function previewManualMemory() {
   const blocks = splitManualText(text);
   let draft = buildManualMemoryDraft(text, blocks);
   if (draft.translationPending) {
-    if (state.settings.aiProvider === "domestic-model-service" && !state.runtimeAiKey) {
+    if (state.settings.aiProvider === "domestic-model-service" && !hasAiKeyAvailable()) {
       state.manualInput.text = text;
       state.manualInput.previewReady = false;
       state.manualInput.previewDraft = null;
@@ -2046,7 +2125,7 @@ async function processOfflineQueue() {
       if (task.type === "ai-enrich-capture" || task.type === "ai-enrich-manual") {
         const memory = state.memories.find((item) => item.id === task.memoryId);
         if (memory) {
-          if (task.type === "ai-enrich-manual" && state.settings.aiProvider === "domestic-model-service" && !state.runtimeAiKey) {
+          if (task.type === "ai-enrich-manual" && state.settings.aiProvider === "domestic-model-service" && !hasAiKeyAvailable()) {
             blockedByApiKey = true;
             await storage.updateTask({ ...task, status: "pending", lastError: "DeepSeek API Key required." });
             openApiKeyDialog("补整理需要 DeepSeek API Key，保存后会继续生成真实翻译、中文解释、例句和复习卡片。", "process-queue");
@@ -2224,6 +2303,106 @@ function thumbForOcrSource(sourceImage) {
   return "menu";
 }
 
+async function testAiConnection() {
+  state.aiConnection = {
+    status: "checking",
+    message: "正在检测 AI 配置",
+    checkedAt: new Date().toISOString(),
+    keySource: state.runtimeAiKey ? "browser-session" : "",
+    model: "",
+  };
+  render();
+
+  try {
+    const configResponse = await fetch("/api/ai/config");
+    const config = await configResponse.json().catch(() => ({}));
+    if (!configResponse.ok) throw new Error(config.error || "AI 配置接口不可用");
+
+    if (state.runtimeAiKey) {
+      const testResponse = await fetch(state.settings.domesticAiEndpoint || "/api/ai/explain", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-runtime-ai-key": state.runtimeAiKey,
+          "x-ai-mode": "deepseek",
+        },
+        body: JSON.stringify(buildAiConnectionTestPayload()),
+      });
+      const testResult = await testResponse.json().catch(() => ({}));
+      if (!testResponse.ok) throw new Error(testResult.error || `DeepSeek 测试失败：${testResponse.status}`);
+      state.settings.aiNetworkEnabled = true;
+      await storage.saveSettings(state.settings);
+      state.aiConnection = {
+        status: "verified",
+        message: "本次手机页面 Key 可用，真实 AI 解释接口已返回。",
+        checkedAt: new Date().toISOString(),
+        keySource: "browser-session",
+        model: testResult.model || config.model || "",
+      };
+      render();
+      toast("DeepSeek 连接已验证");
+      return;
+    }
+
+    if (config.keyConfigured) {
+      state.settings.aiNetworkEnabled = true;
+      await storage.saveSettings(state.settings);
+      state.aiConnection = {
+        status: "server-key",
+        message: "后端环境已配置 DeepSeek Key；这台手机当前页面没有单独填写 Key。",
+        checkedAt: new Date().toISOString(),
+        keySource: config.keySource || "env",
+        model: config.model || "",
+      };
+    } else {
+      state.aiConnection = {
+        status: "missing-key",
+        message: "当前页面没有本次会话 Key，后端环境也未显示已配置 Key。",
+        checkedAt: new Date().toISOString(),
+        keySource: "none",
+        model: config.model || "",
+      };
+    }
+    render();
+    toast(state.aiConnection.message);
+  } catch (error) {
+    state.aiConnection = {
+      status: "error",
+      message: error instanceof Error ? error.message : "AI 配置检测失败",
+      checkedAt: new Date().toISOString(),
+      keySource: state.runtimeAiKey ? "browser-session" : "",
+      model: "",
+    };
+    render();
+    toast(state.aiConnection.message);
+  }
+}
+
+function buildAiConnectionTestPayload() {
+  return {
+    locale: "zh-CN",
+    memory: {
+      original: "Cash only",
+      translation: "只收现金",
+      literal: "仅现金",
+      language: "英文",
+      targetLanguage: "中文",
+      scene: "购物付款",
+      tone: "提示",
+      difficulty: "基础",
+    },
+    source: {
+      inputMode: "manual-text",
+      manualText: "Cash only",
+      contentBlocks: [{ text: "Cash only", level: "phrase" }],
+      location: "测试",
+      story: "AI 连接检测",
+      sourceImageId: "",
+    },
+    requiredSections: ["literal", "natural", "scene", "tone", "example", "similar", "mistake"],
+  };
+}
+
 function openApiKeyDialog(message = "", pendingAction = "") {
   state.apiKeyDialog = {
     open: true,
@@ -2261,6 +2440,13 @@ async function saveRuntimeApiKey() {
     const pendingAction = state.apiKeyDialog.pendingAction;
     state.runtimeAiKey = apiKey;
     state.settings.aiNetworkEnabled = true;
+    state.aiConnection = {
+      status: "runtime-key",
+      message: "本次手机页面已填写 DeepSeek Key；可点击检测 AI 配置确认接口可用。",
+      checkedAt: new Date().toISOString(),
+      keySource: result.keySource || "browser-session",
+      model: result.model || "",
+    };
     await storage.saveSettings(state.settings);
     closeApiKeyDialog();
     toast(`DeepSeek API Key 已保存在本次页面会话，当前模式：${result.aiExplainMode}`);
@@ -2396,7 +2582,7 @@ function escapeHtml(value) {
 }
 
 if ("serviceWorker" in navigator) {
-  navigator.serviceWorker.register("./service-worker.js?v=17").catch(() => {});
+  navigator.serviceWorker.register("./service-worker.js?v=18").catch(() => {});
 }
 
 render();
