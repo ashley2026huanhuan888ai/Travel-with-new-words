@@ -305,6 +305,7 @@ function getOcrAdapter() {
   return createOcrAdapter({
     provider: state.settings.ocrProvider,
     cloudEnabled: state.settings.cloudUploadEnabled,
+    allowMockFallback: true,
   });
 }
 
