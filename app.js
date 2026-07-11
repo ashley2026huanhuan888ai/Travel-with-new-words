@@ -379,7 +379,7 @@ function nav() {
             (id === "library" && state.activeTab === "detail") ||
             (id === "capture" && state.activeTab === "manual");
           return `
-            <button class="nav-item ${active ? "active" : ""} ${special || ""}" ${id === "capture" ? 'data-action="open-camera"' : `data-tab="${id}"`}>
+            <button class="nav-item ${active ? "active" : ""} ${special || ""}" data-tab="${id}">
               <span class="tab-icon-wrap">${icon(iconName, "tab-icon")}</span>
               <span>${label}</span>
             </button>
@@ -673,7 +673,7 @@ function libraryScreen() {
   const filters = ["全部", "餐饮", "交通", "购物", "手动输入", "待复习", "已掌握"];
   const memories = filteredMemories();
   return `
-    ${topbar("记忆库", "按语言、地点、场景和来源检索", `<button class="icon-button" data-action="export">${icon("export")}</button>`)}
+    ${topbar("记忆库", "按语言、地点、场景和来源检索", `<button class="icon-button" data-tab="manual" aria-label="手动添加记忆">${icon("edit")}</button><button class="icon-button" data-action="export" aria-label="导出">${icon("export")}</button>`)}
     <div class="content">
       <label class="search-field">
         ${icon("search")}
