@@ -107,6 +107,10 @@ async function getSourceImage(id) {
   return withStore(STORES.sourceImages, "readonly", (store) => store.get(id));
 }
 
+async function removeMemory(id) {
+  return remove(STORES.memories, id);
+}
+
 async function saveSettings(settings) {
   return setMeta("settings", settings);
 }
@@ -133,6 +137,7 @@ async function clearCompletedQueue() {
 export const storage = {
   loadAppData,
   saveMemory,
+  removeMemory,
   saveSourceImage,
   getSourceImage,
   saveSettings,

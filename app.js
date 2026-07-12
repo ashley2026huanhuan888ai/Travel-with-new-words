@@ -1,4 +1,4 @@
-import { storage } from "./storage.js?v=18";
+import { storage } from "./storage.js?v=19";
 import { createAiExplanationAdapter, getAiProviderLabel } from "./ai.js?v=18";
 import { createOcrAdapter, getOcrProviderLabel, ocrProviderOptions } from "./ocr.js?v=18";
 
@@ -274,6 +274,8 @@ const defaultState = {
     manualTargetLanguage: "zh",
   },
   reviewRevealed: false,
+  editingMemory: null,
+  moreMemorySheet: false,
   memories: seedMemories,
   queue: [],
   sourceImages: [],
@@ -322,9 +324,15 @@ function getAiAdapter() {
 async function hydrateState() {
   try {
     const data = await storage.loadAppData(seedMemories, defaultState.settings);
+    const mergedSettings = { ...defaultState.settings, ...data.settings };
+    // 迁移旧 Apple Vision 设置为 local-mock（Web 环境不可用）
+    if (mergedSettings.ocrProvider === "apple-vision") {
+      mergedSettings.ocrProvider = "local-mock";
+      await storage.saveSettings(mergedSettings);
+    }
     state = {
       ...state,
-      settings: { ...defaultState.settings, ...data.settings },
+      settings: mergedSettings,
       memories: sortMemories(data.memories.length ? data.memories : seedMemories),
       queue: sortQueue(data.queue),
       sourceImages: sortSourceImages(data.sourceImages || []),
@@ -411,6 +419,8 @@ function render() {
       ${nav()}
       ${state.exportOptions.open ? exportSheet() : ""}
       ${state.apiKeyDialog.open ? apiKeyDialog() : ""}
+      ${state.editingMemory ? editMemoryDialog() : ""}
+      ${state.moreMemorySheet ? moreMemorySheet() : ""}
       ${state.toast ? `<div class="toast">${state.toast}</div>` : ""}
     </section>
   `;
@@ -427,7 +437,7 @@ function homeScreen() {
       "borderless"
     )}
     <div class="content">
-      <button class="hero-action" data-action="open-camera">
+      <button class="hero-action" data-tab="capture">
         <span class="camera-mark">${icon("camera")}</span>
         <span><strong>拍照翻译</strong><span>识别菜单 / 路牌 / 说明书等</span></span>
       </button>
@@ -716,7 +726,7 @@ function detailScreen() {
     ${topbar(
       `<button class="icon-button" data-tab="library" aria-label="返回">${icon("back")}</button> 记忆详情`,
       "",
-      `<button class="icon-button" aria-label="编辑">${icon("edit")}</button><button class="icon-button" aria-label="更多">${icon("more")}</button>`
+      `<button class="icon-button" data-action="edit-memory" aria-label="编辑">${icon("edit")}</button><button class="icon-button" data-action="more-memory" aria-label="更多">${icon("more")}</button>`
     )}
     <div class="content">
       <div class="detail-block">
@@ -1686,6 +1696,37 @@ async function handleAction(action) {
   if (action === "reveal-review") {
     state.reviewRevealed = true;
     render();
+    return;
+  }
+  if (action === "edit-memory") {
+    openEditMemoryDialog();
+    return;
+  }
+  if (action === "more-memory") {
+    openMoreMemorySheet();
+    return;
+  }
+  if (action === "close-edit-memory") {
+    state.editingMemory = null;
+    render();
+    return;
+  }
+  if (action === "save-edit-memory") {
+    await saveEditMemory();
+    return;
+  }
+  if (action === "close-more-memory") {
+    state.moreMemorySheet = false;
+    render();
+    return;
+  }
+  if (action === "delete-memory") {
+    await deleteCurrentMemory();
+    return;
+  }
+  if (action === "mark-memory-mastered") {
+    await markCurrentMemoryMastered();
+    return;
   }
 }
 
@@ -2583,7 +2624,121 @@ function escapeHtml(value) {
 }
 
 if ("serviceWorker" in navigator) {
-  navigator.serviceWorker.register("./service-worker.js?v=18").catch(() => {});
+  navigator.serviceWorker.register("./service-worker.js?v=19").catch(() => {});
+}
+
+/* ===== 记忆详情页：编辑弹窗 ===== */
+function editMemoryDialog() {
+  const memory = state.editingMemory;
+  if (!memory) return "";
+  return `
+    <div class="sheet-backdrop" data-action="close-edit-memory" aria-hidden="true"></div>
+    <div class="sheet edit-sheet">
+      <div class="sheet-header">
+        <h3>编辑记忆</h3>
+        <button class="icon-button" data-action="close-edit-memory" aria-label="关闭">${icon("x")}</button>
+      </div>
+      <div class="sheet-body">
+        <label>原文<textarea rows="2" data-edit-field="original">${escapeHtml(memory.original)}</textarea></label>
+        <label>自然译文<textarea rows="2" data-edit-field="translation">${escapeHtml(memory.translation)}</textarea></label>
+        <label>直译参考<textarea rows="2" data-edit-field="literal">${escapeHtml(memory.literal)}</textarea></label>
+        <label>使用场景<input data-edit-field="scene" value="${escapeHtml(memory.scene)}" /></label>
+        <label>语气/风格<input data-edit-field="tone" value="${escapeHtml(memory.tone)}" /></label>
+        <label>例句<textarea rows="2" data-edit-field="example">${escapeHtml(memory.example)}</textarea></label>
+        <label>易错点<textarea rows="2" data-edit-field="mistake">${escapeHtml(memory.mistake)}</textarea></label>
+        <label>用法说明<textarea rows="2" data-edit-field="usage">${escapeHtml(memory.usage)}</textarea></label>
+      </div>
+      <div class="sheet-footer">
+        <button class="secondary-button" data-action="close-edit-memory">取消</button>
+        <button class="primary-button" data-action="save-edit-memory">保存</button>
+      </div>
+    </div>
+    <style>
+      .edit-sheet { max-height: 85vh; overflow-y: auto; }
+      .edit-sheet .sheet-body label { display: block; margin-bottom: 12px; font-size: 13px; color: var(--gray); }
+      .edit-sheet .sheet-body input,
+      .edit-sheet .sheet-body textarea { width: 100%; margin-top: 4px; padding: 8px; border: 1px solid var(--gray-light); border-radius: 8px; font-size: 14px; background: var(--bg); color: var(--text); }
+      .edit-sheet .sheet-body textarea { resize: vertical; min-height: 48px; }
+      .edit-sheet .sheet-footer { display: flex; gap: 12px; justify-content: flex-end; padding: 12px 0 0; }
+    </style>
+  `;
+}
+
+function openEditMemoryDialog() {
+  const memory = state.memories.find((item) => item.id === state.detailId);
+  if (!memory) { toast("找不到当前记忆"); return; }
+  state.editingMemory = memory;
+  render();
+}
+
+async function saveEditMemory() {
+  const memory = state.editingMemory;
+  if (!memory) return;
+  const fields = document.querySelectorAll("[data-edit-field]");
+  fields.forEach((field) => {
+    memory[field.dataset.editField] = field.value;
+  });
+  memory.updatedAt = new Date().toISOString();
+  await storage.saveMemory(memory);
+  state.editingMemory = null;
+  toast("记忆已更新");
+  render();
+}
+
+/* ===== 记忆详情页：更多操作底部菜单 ===== */
+function moreMemorySheet() {
+  const memory = state.memories.find((item) => item.id === state.detailId);
+  if (!memory) return "";
+  return `
+    <div class="sheet-backdrop" data-action="close-more-memory" aria-hidden="true"></div>
+    <div class="action-sheet">
+      <button class="action-sheet-item" data-action="mark-memory-mastered">标记为已掌握</button>
+      <button class="action-sheet-item danger" data-action="delete-memory">删除记忆</button>
+      <button class="action-sheet-item cancel" data-action="close-more-memory">取消</button>
+    </div>
+    <style>
+      .action-sheet {
+        position: fixed; bottom: 0; left: 0; right: 0; z-index: 200;
+        background: var(--bg-card); border-radius: 16px 16px 0 0;
+        padding: 8px 16px 24px; display: flex; flex-direction: column; gap: 4px;
+      }
+      .action-sheet-item {
+        width: 100%; padding: 14px; border: none; background: none;
+        font-size: 16px; text-align: center; color: var(--text);
+        border-radius: 12px; cursor: pointer;
+      }
+      .action-sheet-item:active { background: var(--gray-light); }
+      .action-sheet-item.danger { color: #e53935; }
+      .action-sheet-item.cancel { color: var(--gray); margin-top: 4px; border-top: 6px solid var(--gray-light); padding-top: 18px; }
+    </style>
+  `;
+}
+
+function openMoreMemorySheet() {
+  state.moreMemorySheet = true;
+  render();
+}
+
+async function deleteCurrentMemory() {
+  const memory = state.memories.find((item) => item.id === state.detailId);
+  if (!memory) { toast("找不到当前记忆"); return; }
+  state.moreMemorySheet = false;
+  state.memories = state.memories.filter((item) => item.id !== state.detailId);
+  await storage.removeMemory(memory.id);
+  state.detailId = null;
+  state.activeTab = "library";
+  toast("记忆已删除");
+  render();
+}
+
+async function markCurrentMemoryMastered() {
+  const memory = state.memories.find((item) => item.id === state.detailId);
+  if (!memory) { toast("找不到当前记忆"); return; }
+  state.moreMemorySheet = false;
+  memory.status = "已掌握";
+  await storage.saveMemory(memory);
+  toast("已标记为已掌握");
+  render();
 }
 
 render();
